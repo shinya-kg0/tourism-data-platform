@@ -1,0 +1,36 @@
+# 秘密情報・ローカルデータ
+.env
+.env.*
+!.env.example
+data/
+*.xlsx
+*.xls
+!ingest/tests/fixtures/*.xlsx
+!ingest/tests/fixtures/*.xls
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+backend.hcl
+crash.log
+
+# OS / エディタ
+.DS_Store
+.idea/

@@ -1,0 +1,29 @@
+# 認証は Application Default Credentials（ローカル：gcloud auth application-default login、
+# Cloud Run / GitHub Actions：サービスアカウント）。キーファイルは使わない（D-18）
+tourism:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT_ID') }}"
+      dataset: "dbt_{{ env_var('DBT_USER') }}"
+      location: asia-northeast1
+      threads: 4
+      maximum_bytes_billed: 10000000000  # 1 クエリ 10GB まで（費用の安全策）
+    ci:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT_ID') }}"
+      dataset: "ci_pr_{{ env_var('PR_NUMBER') }}"
+      location: asia-northeast1
+      threads: 4
+      maximum_bytes_billed: 10000000000
+    prod:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT_ID') }}"
+      dataset: staging
+      location: asia-northeast1
+      threads: 4
+      maximum_bytes_billed: 10000000000

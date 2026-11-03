@@ -1,0 +1,9 @@
+[project]
+name = "tourism-dbt"
+version = "0.1.0"
+description = "観光統計 DWH の dbt プロジェクト"
+requires-python = ">=3.12"
+dependencies = ["dbt-bigquery"]
+
+[tool.uv]
+package = false

@@ -1,0 +1,27 @@
+name: tourism
+version: "0.1.0"
+profile: tourism
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+clean-targets: ["target", "dbt_packages"]
+
+# データセットの割り当て（仕様書 6.1）と保存方法（D-08）
+# prod 以外は macros/generate_schema_name.sql により target.schema にまとまる
+models:
+  tourism:
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table
+
+seeds:
+  tourism:
+    +schema: staging

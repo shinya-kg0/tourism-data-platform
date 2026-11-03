@@ -1,0 +1,1 @@
+# Workflows「transform」：毎日 04:00 JST に起動し、新しい取り込みがあれば dbt build を実行する（仕様書 7.5、D-12）
