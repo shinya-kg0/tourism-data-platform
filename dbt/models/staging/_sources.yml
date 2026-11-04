@@ -1,0 +1,20 @@
+version: 2
+
+sources:
+  - name: raw
+    description: ingest が書き込む縦持ちのデータ（仕様書 6.2）
+    database: "{{ env_var('GCP_PROJECT_ID') }}"
+    schema: raw
+    tables:
+      - name: overnight_cells
+        description: 宿泊旅行統計調査（年確定値）の表を縦持ちにしたもの。1 行が Excel の 1 セル
+      - name: consumption_cells
+        description: 訪日外国人消費動向調査の対象表を縦持ちにしたもの
+
+  - name: ops
+    description: 取り込みと dbt 実行の記録
+    database: "{{ env_var('GCP_PROJECT_ID') }}"
+    schema: ops
+    tables:
+      - name: ingestion_log
+      - name: dbt_runs

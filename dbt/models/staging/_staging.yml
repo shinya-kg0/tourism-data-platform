@@ -1,0 +1,67 @@
+version: 2
+
+models:
+  - name: stg_overnight__stays
+    description: |
+      宿泊旅行統計 第2表（延べ宿泊者数）。年確定値の年計と 1〜12 月。
+      公表値は 10 人泊単位で丸められているため、月の合計と年計、都道府県の合計と全国には小さな差が出る。
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [year, month, area_name, target, employee_size, purpose]
+    columns:
+      - name: year
+        description: 年
+        data_tests: [not_null]
+      - name: month
+        description: 月（0＝年計）
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+                quote: false
+      - name: area_type
+        description: national（全国）/ prefecture（都道府県）/ transport_bureau（運輸局等。都道府県の再掲なので合計すると二重に数える）
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [national, prefecture, transport_bureau]
+      - name: pref_code
+        description: 都道府県コード（都道府県の行だけ）
+        data_tests:
+          - not_null:
+              config:
+                where: "area_type = 'prefecture'"
+          - relationships:
+              arguments:
+                to: ref('seed_prefecture')
+                field: pref_code
+      - name: area_name
+        description: 地域名
+        data_tests: [not_null]
+      - name: target
+        description: 全体 / 外国人
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [全体, 外国人]
+      - name: employee_size
+        description: 施設の従業者数（総数、0～9人、10～29人、30～99人、100人以上）。外国人は総数のみ
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [総数, 0～9人, 10～29人, 30～99人, 100人以上]
+      - name: purpose
+        description: 施設の宿泊目的割合（計、観光目的の宿泊者が50％以上、観光目的の宿泊者が50％未満）。「計」は不詳を含む
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [計, 観光目的の宿泊者が50％以上, 観光目的の宿泊者が50％未満]
+      - name: guest_nights
+        description: 延べ宿泊者数（人泊）。該当なしのセルは NULL で、flag に記号が入る
+      - name: flag
+        description: Excel 上の記号（- ＝該当なし など）
+      - name: release_status
+        description: 公表区分
+      - name: format_version
+        description: Excel の形式のバージョン（overnight_v1＝2016〜2019 年の旧形式、overnight_v2＝2020 年〜）
