@@ -1,1 +1,136 @@
 # Workflows「transform」：毎日 04:00 JST に起動し、新しい取り込みがあれば dbt build を実行する（仕様書 7.5、D-12）
+#
+# 引数（省略可）
+#   trigger  schedule / manual（既定は manual。Cloud Scheduler は schedule を渡す）
+#   force    true なら、新しい取り込みがなくても dbt を実行する
+#
+#   gcloud workflows run transform --location=asia-northeast1 --data='{"force": true}'
+#
+# 環境変数（Terraform の user_env_vars）
+#   DBT_JOB  Cloud Run Job の名前
+
+main:
+  params: [args]
+  steps:
+    - init:
+        assign:
+          - project: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+          - location: ${sys.get_env("GOOGLE_CLOUD_LOCATION")}
+          - job: ${sys.get_env("DBT_JOB")}
+          - input: ${default(args, {})}
+          - trigger: ${default(map.get(input, "trigger"), "manual")}
+          - force: ${default(map.get(input, "force"), false)}
+          - started_at: ${time.format(sys.now())}
+
+    # 1. 最後に成功した dbt 実行より後に、成功した取り込みがあるか
+    - check_new_ingestion:
+        call: googleapis.bigquery.v2.jobs.query
+        args:
+          projectId: ${project}
+          body:
+            useLegacySql: false
+            location: ${location}
+            query: ${"
+              SELECT COALESCE(
+                (SELECT MAX(finished_at) FROM `" + project + ".ops.ingestion_log` WHERE status = 'succeeded')
+                  > COALESCE(
+                    (SELECT MAX(started_at) FROM `" + project + ".ops.dbt_runs` WHERE status = 'succeeded'),
+                    TIMESTAMP '1970-01-01'
+                  ),
+                FALSE
+              )"}
+        result: check
+    - decide:
+        switch:
+          - condition: ${check.rows[0].f[0].v == "true" or force}
+            next: run_dbt
+    - nothing_new:
+        return:
+          status: skipped
+          reason: 前回の dbt 実行より後に、成功した取り込みがない
+
+    # 2. dbt build（テストに落ちたら marts は更新されない）。失敗したら 1 回だけやり直す
+    - run_dbt:
+        try:
+          call: googleapis.run.v2.projects.locations.jobs.run
+          args:
+            name: ${"projects/" + project + "/locations/" + location + "/jobs/" + job}
+            connector_params:
+              timeout: 3600
+          result: execution
+        retry:
+          predicate: ${log_and_retry}
+          max_retries: 1
+          backoff:
+            initial_delay: 300
+            max_delay: 300
+            multiplier: 1
+        # やり直しても失敗したとき
+        except:
+          as: e
+          steps:
+            - record_failure:
+                call: record_run
+                args:
+                  project: ${project}
+                  location: ${location}
+                  status: failed
+                  trigger: ${trigger}
+                  started_at: ${started_at}
+            # 実行を失敗で終わらせ、監視の対象にする（仕様書 13 章）
+            - fail:
+                raise: ${e}
+
+    # 3. 結果を ops.dbt_runs に記録する
+    - record_success:
+        call: record_run
+        args:
+          project: ${project}
+          location: ${location}
+          status: succeeded
+          trigger: ${trigger}
+          started_at: ${started_at}
+    - done:
+        return:
+          status: succeeded
+          execution: ${execution.metadata.name}
+
+record_run:
+  params: [project, location, status, trigger, started_at]
+  steps:
+    - insert:
+        call: googleapis.bigquery.v2.jobs.query
+        args:
+          projectId: ${project}
+          body:
+            useLegacySql: false
+            location: ${location}
+            query: ${"
+              INSERT INTO `" + project + ".ops.dbt_runs` (execution_id, status, trigger, started_at, finished_at)
+              VALUES (@execution_id, @status, @trigger, TIMESTAMP(@started_at), CURRENT_TIMESTAMP())"}
+            queryParameters:
+              - name: execution_id
+                parameterType: { type: STRING }
+                parameterValue: { value: '${sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}' }
+              - name: status
+                parameterType: { type: STRING }
+                parameterValue: { value: '${status}' }
+              - name: trigger
+                parameterType: { type: STRING }
+                parameterValue: { value: '${trigger}' }
+              - name: started_at
+                parameterType: { type: STRING }
+                parameterValue: { value: '${started_at}' }
+
+log_and_retry:
+  params: [e]
+  steps:
+    - log:
+        call: sys.log
+        args:
+          severity: WARNING
+          json:
+            message: Cloud Run Job「dbt」が失敗したため、やり直す
+            error: ${e}
+    - retry:
+        return: true
