@@ -8,6 +8,7 @@ dependencies = [
     "google-cloud-storage",
     "openpyxl",
     "pandas",
+    "pandas-gbq>=0.35.3",
     "pyarrow",
     "xlrd",
 ]
