@@ -1,0 +1,39 @@
+version: 2
+
+seeds:
+  - name: seed_release_status
+    description: 公表区分の優先順位。staging では同じ年・期の中で priority が最も大きい区分を使う
+    config:
+      column_types:
+        release_status: string
+        priority: int64
+        label_ja: string
+    columns:
+      - name: release_status
+        description: 公表区分（raw の release_status と同じ値）
+        data_tests: [unique, not_null]
+      - name: priority
+        description: 優先順位（大きいほど新しい）
+        data_tests: [unique, not_null]
+      - name: label_ja
+        description: 表示名
+
+  - name: seed_prefecture
+    description: 都道府県のマスタ。Excel に地域コードがない年（2016・2020〜2024 年）の補完と、地方・運輸局への集約に使う
+    config:
+      column_types:
+        pref_code: string
+        pref_name: string
+        region: string
+        transport_bureau: string
+    columns:
+      - name: pref_code
+        description: 都道府県コード（01〜47）
+        data_tests: [unique, not_null]
+      - name: pref_name
+        description: 都道府県名（宿泊旅行統計の表記）
+        data_tests: [unique, not_null]
+      - name: region
+        description: 地方区分（8 区分）
+      - name: transport_bureau
+        description: 運輸局等。長野県は北陸信越運輸局、福井県は中部運輸局に含まれる（宿泊旅行統計の注記どおり）
