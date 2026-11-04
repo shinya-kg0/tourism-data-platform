@@ -1,0 +1,16 @@
+[
+  {"name": "source_uri", "type": "STRING", "mode": "REQUIRED", "description": "元ファイルの GCS URI"},
+  {"name": "generation", "type": "INTEGER", "mode": "REQUIRED", "description": "元ファイルの世代番号"},
+  {"name": "md5", "type": "STRING", "mode": "NULLABLE", "description": "元ファイルの MD5 ハッシュ"},
+  {"name": "survey", "type": "STRING", "mode": "NULLABLE", "description": "調査（overnight / consumption）"},
+  {"name": "period_type", "type": "STRING", "mode": "NULLABLE", "description": "集計期間（annual / quarterly）"},
+  {"name": "year", "type": "INTEGER", "mode": "NULLABLE", "description": "年"},
+  {"name": "quarter", "type": "INTEGER", "mode": "NULLABLE", "description": "期（0＝暦年）"},
+  {"name": "release_status", "type": "STRING", "mode": "NULLABLE", "description": "公表区分"},
+  {"name": "status", "type": "STRING", "mode": "REQUIRED", "description": "running / succeeded / skipped / rejected / failed"},
+  {"name": "row_count", "type": "INTEGER", "mode": "NULLABLE", "description": "raw に書き込んだ行数"},
+  {"name": "error_message", "type": "STRING", "mode": "NULLABLE", "description": "rejected / failed の理由"},
+  {"name": "workflow_execution_id", "type": "STRING", "mode": "NULLABLE", "description": "Workflows の実行 ID"},
+  {"name": "started_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "開始日時"},
+  {"name": "finished_at", "type": "TIMESTAMP", "mode": "NULLABLE", "description": "終了日時"}
+]

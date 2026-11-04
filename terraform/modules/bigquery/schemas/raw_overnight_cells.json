@@ -1,0 +1,19 @@
+[
+  {"name": "year", "type": "INTEGER", "mode": "REQUIRED", "description": "年"},
+  {"name": "month", "type": "INTEGER", "mode": "REQUIRED", "description": "月（0＝年計）"},
+  {"name": "table_id", "type": "STRING", "mode": "REQUIRED", "description": "表番号（例：第2表、参考第1表）"},
+  {"name": "area_code", "type": "STRING", "mode": "NULLABLE", "description": "都道府県コード（全国・運輸局は NULL）"},
+  {"name": "area_name", "type": "STRING", "mode": "REQUIRED", "description": "地域名"},
+  {"name": "target", "type": "STRING", "mode": "REQUIRED", "description": "全体 / 外国人"},
+  {"name": "header_group", "type": "STRING", "mode": "NULLABLE", "description": "見出し（グループ）"},
+  {"name": "header_sub", "type": "STRING", "mode": "NULLABLE", "description": "見出し（区分）"},
+  {"name": "header_item", "type": "STRING", "mode": "REQUIRED", "description": "見出し（項目）"},
+  {"name": "unit", "type": "STRING", "mode": "NULLABLE", "description": "単位"},
+  {"name": "value", "type": "FLOAT", "mode": "NULLABLE", "description": "値"},
+  {"name": "flag", "type": "STRING", "mode": "NULLABLE", "description": "記号（- ＝該当なし、* ＝標準誤差率30％以上 など）"},
+  {"name": "release_status", "type": "STRING", "mode": "REQUIRED", "description": "公表区分（final）"},
+  {"name": "format_version", "type": "STRING", "mode": "REQUIRED", "description": "Excel の形式のバージョン"},
+  {"name": "source_uri", "type": "STRING", "mode": "REQUIRED", "description": "元ファイルの GCS URI"},
+  {"name": "source_generation", "type": "INTEGER", "mode": "REQUIRED", "description": "元ファイルの世代番号"},
+  {"name": "ingested_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "取り込んだ日時"}
+]
