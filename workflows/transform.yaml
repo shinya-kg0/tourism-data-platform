@@ -30,15 +30,19 @@ main:
           body:
             useLegacySql: false
             location: ${location}
-            query: ${"
+            # テーブル名は defaultDataset（ops）からの相対で書く
+            defaultDataset:
+              projectId: ${project}
+              datasetId: ops
+            query: |
               SELECT COALESCE(
-                (SELECT MAX(finished_at) FROM `" + project + ".ops.ingestion_log` WHERE status = 'succeeded')
+                (SELECT MAX(finished_at) FROM ingestion_log WHERE status = 'succeeded')
                   > COALESCE(
-                    (SELECT MAX(started_at) FROM `" + project + ".ops.dbt_runs` WHERE status = 'succeeded'),
+                    (SELECT MAX(started_at) FROM dbt_runs WHERE status = 'succeeded'),
                     TIMESTAMP '1970-01-01'
                   ),
                 FALSE
-              )"}
+              )
         result: check
     - decide:
         switch:
@@ -105,9 +109,12 @@ record_run:
           body:
             useLegacySql: false
             location: ${location}
-            query: ${"
-              INSERT INTO `" + project + ".ops.dbt_runs` (execution_id, status, trigger, started_at, finished_at)
-              VALUES (@execution_id, @status, @trigger, TIMESTAMP(@started_at), CURRENT_TIMESTAMP())"}
+            defaultDataset:
+              projectId: ${project}
+              datasetId: ops
+            query: |
+              INSERT INTO dbt_runs (execution_id, status, trigger, started_at, finished_at)
+              VALUES (@execution_id, @status, @trigger, TIMESTAMP(@started_at), CURRENT_TIMESTAMP())
             queryParameters:
               - name: execution_id
                 parameterType: { type: STRING }
