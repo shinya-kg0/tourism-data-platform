@@ -4,16 +4,28 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pandas as pd
+from google.api_core import exceptions, retry
 from google.cloud import bigquery
 
 RAW_TABLES = {"overnight": "raw.overnight_cells", "consumption": "raw.consumption_cells"}
 LOG_TABLE = "ops.ingestion_log"
 
 
+def is_concurrent_update(exc: Exception) -> bool:
+    """同じテーブルを入れ替えるトランザクションが同時に走り、片方が中断されたか"""
+    return isinstance(exc, exceptions.GoogleAPICallError) and "concurrent update" in str(exc).lower()
+
+
+# 複数のファイルを一度に上げると、raw の同じテーブルへのトランザクションがぶつかって中断される。
+# 待てば通るので、Excel の解析からやり直す（Workflows のやり直し）前に、ここで間隔を空けてやり直す
+CONFLICT_RETRY = retry.Retry(predicate=is_concurrent_update, initial=5.0, maximum=60.0, multiplier=2.0, timeout=600.0)
+
+
 class Warehouse:
     def __init__(self, project: str, client: bigquery.Client | None = None):
         self.project = project
         self.client = client or bigquery.Client(project=project)
+        self.conflict_retry = CONFLICT_RETRY
 
     def _query(self, sql: str, **params) -> bigquery.table.RowIterator:
         query_params = [bigquery.ScalarQueryParameter(k, _bq_type(v), v) for k, v in params.items()]
@@ -35,7 +47,7 @@ class Warehouse:
 
             where = " AND ".join(f"{k} = @{k}" for k in key)
             col_list = ", ".join(columns)
-            self._query(
+            self.conflict_retry(self._query)(
                 f"""
                 BEGIN TRANSACTION;
                 DELETE FROM `{target.full_table_id.replace(":", ".")}` WHERE {where};
