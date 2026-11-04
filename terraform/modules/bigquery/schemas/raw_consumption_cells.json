@@ -1,0 +1,18 @@
+[
+  {"name": "year", "type": "INTEGER", "mode": "REQUIRED", "description": "年"},
+  {"name": "quarter", "type": "INTEGER", "mode": "REQUIRED", "description": "期（0＝暦年）"},
+  {"name": "table_id", "type": "STRING", "mode": "REQUIRED", "description": "表番号（例：表3-1）"},
+  {"name": "row_category", "type": "STRING", "mode": "NULLABLE", "description": "行の見出し（大分類。例：入国空港・海港）"},
+  {"name": "row_item", "type": "STRING", "mode": "NULLABLE", "description": "行の見出し（項目。例：新千歳空港）"},
+  {"name": "col_dimension", "type": "STRING", "mode": "REQUIRED", "description": "列の区分（例：国籍･地域）"},
+  {"name": "col_member", "type": "STRING", "mode": "REQUIRED", "description": "列の区分の値（例：韓国）"},
+  {"name": "measure", "type": "STRING", "mode": "REQUIRED", "description": "指標（回答数、消費単価、購入率など）"},
+  {"name": "unit", "type": "STRING", "mode": "NULLABLE", "description": "単位"},
+  {"name": "value", "type": "FLOAT", "mode": "NULLABLE", "description": "値"},
+  {"name": "flag", "type": "STRING", "mode": "NULLABLE", "description": "記号（- など）"},
+  {"name": "release_status", "type": "STRING", "mode": "REQUIRED", "description": "公表区分（preliminary1 / preliminary2 / final）"},
+  {"name": "format_version", "type": "STRING", "mode": "REQUIRED", "description": "Excel の形式のバージョン"},
+  {"name": "source_uri", "type": "STRING", "mode": "REQUIRED", "description": "元ファイルの GCS URI"},
+  {"name": "source_generation", "type": "INTEGER", "mode": "REQUIRED", "description": "元ファイルの世代番号"},
+  {"name": "ingested_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "取り込んだ日時"}
+]

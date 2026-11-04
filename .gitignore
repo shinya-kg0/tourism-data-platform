@@ -29,6 +29,7 @@ dbt/.user.yml
 *.tfvars
 !*.tfvars.example
 backend.hcl
+tfplan
 crash.log
 
 # OS / エディタ

@@ -436,7 +436,7 @@ Cloud Scheduler（毎日 04:00 JST）
 | DWH | BigQueryのデータセット（raw / ops / staging / intermediate / marts）、raw・ops のテーブル |
 | 処理 | Cloud Run Jobs（ingest / dbt）、Workflows（ingest / transform）、Eventarcのトリガー、Cloud Scheduler |
 | 権限 | サービスアカウント、IAMの割り当て、GitHub Actions用のWorkload Identity連携 |
-| 監視 | ログに基づく指標、アラートの設定、通知先（メール）、予算アラート |
+| 監視 | ログに基づく指標、アラートの設定、通知先（メール） |
 
 ### 10.2 管理しない範囲
 
@@ -446,6 +446,7 @@ Cloud Scheduler（毎日 04:00 JST）
 | `{project}-tfstate` バケット | Terraformの状態ファイルを置く場所なので、Terraformより先に必要（鶏と卵の問題） |
 | staging / intermediate / marts のテーブル | dbtが作る |
 | Looker Studio | D-14 |
+| 予算アラート | フェーズ0で課金アカウント側に手作業で設定済み。予算は課金アカウントに属し、プロジェクト用の権限だけでは管理できないため、当面は手作業のままにする |
 
 ### 10.3 構成
 
@@ -504,7 +505,7 @@ Cloud Scheduler（毎日 04:00 JST）
 |---|---|---|
 | ingest の rejected / failed | ログに基づく指標 → アラート | メール |
 | transform の失敗（dbtテストの不合格を含む） | Workflowsの実行失敗 → アラート | メール |
-| 費用 | 予算アラート（月1,000円、50％・90％・100％） | メール |
+| 費用 | 予算アラート（手作業で設定。10.2） | メール |
 
 ---
 

@@ -1,0 +1,7 @@
+[
+  {"name": "execution_id", "type": "STRING", "mode": "REQUIRED", "description": "Workflows の実行 ID"},
+  {"name": "status", "type": "STRING", "mode": "REQUIRED", "description": "succeeded / failed"},
+  {"name": "trigger", "type": "STRING", "mode": "REQUIRED", "description": "schedule / manual"},
+  {"name": "started_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "開始日時"},
+  {"name": "finished_at", "type": "TIMESTAMP", "mode": "NULLABLE", "description": "終了日時"}
+]
