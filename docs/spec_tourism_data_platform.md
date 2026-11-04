@@ -195,6 +195,8 @@ INSERT INTO raw.consumption_cells SELECT * FROM raw._tmp_xxx;
 COMMIT TRANSACTION;
 ```
 
+複数のファイルを一度に上げると、同じテーブルへのトランザクションがぶつかり、BigQuery が片方を中断する（`Transaction is aborted due to concurrent update`）。待てば通るエラーなので、ingest の中で間隔を空けて最大10分やり直す（10年分を同時に上げたときは、21回の中断がすべてこれで解消した）。
+
 > **D-05：追記ではなく、決まった単位で丸ごと入れ替える**
 > 追記にすると、上げ直しや数値の改定で同じ期のデータが二重に入る。単位を決めて入れ替えれば、何度実行しても結果は同じになる。トランザクションを使うので、入れ替えの途中の状態が外から見えることもない。
 > 公表区分ごとに分けて残すので、1次速報と確報を比べることもできる。どの区分を使うかはstaging層で決める（6.3節）。
@@ -368,7 +370,7 @@ Cloud Scheduler（毎日 04:00 JST）
   └▶ Workflows「transform」
         1. ops.ingestion_log を確認：最後に成功したdbt実行より後に、成功した取り込みがあるか
         2. なければ終わる（手動で force=true を指定したときは続ける）
-        3. Cloud Run Job「dbt」を実行：dbt deps → dbt seed → dbt build --target prod
+        3. Cloud Run Job「dbt」を実行：dbt build --target prod（シードも含む。dbt deps はイメージを作るときに済ませる）
         4. ops.dbt_runs に結果を記録する
         5. 失敗したら通知する
 ```
@@ -466,7 +468,7 @@ Cloud Scheduler（毎日 04:00 JST）
 |---|---|---|
 | `sa-ingest` | 取り込み処理 | 3つのバケットのオブジェクト管理者、`raw`・`ops` のデータ編集者、プロジェクトのジョブユーザー |
 | `sa-dbt` | dbt | `raw`・`ops` のデータ閲覧者、`staging`・`intermediate`・`marts` のデータ編集者、ジョブユーザー |
-| `sa-workflows` | Workflows | 2つのジョブを引数を上書きして実行する権限、`ops` のデータ編集者、ジョブユーザー、ログの書き込み |
+| `sa-workflows` | Workflows | ジョブ単位の実行権限（ingest は引数の上書きあり、dbt はなし）、ジョブの終了を待つためのカスタムロール（`run.operations.get`・`run.executions.get`）、`ops` のデータ編集者、ジョブユーザー、ログの書き込み |
 | `sa-eventarc` | Eventarcのトリガー | Workflowsの起動者、イベントの受信者 |
 | `sa-scheduler` | Cloud Scheduler | Workflowsの起動者 |
 | `sa-looker` | Looker Studio | `marts` のデータ閲覧者、ジョブユーザー |

@@ -1,6 +1,6 @@
-# サービスアカウントと、データへの権限（仕様書 11 章、D-17）
-# Cloud Run・Workflows・Eventarc を起動する権限と Workload Identity 連携は、
-# それぞれのリソースを作るフェーズで追加する
+# サービスアカウントと、データ・処理への権限（仕様書 11 章、D-17）
+# 個々の Cloud Run Job を実行する権限はジョブ単位で付けるため、modules/pipeline に置く。
+# Workload Identity 連携は CI/CD のフェーズで追加する
 
 locals {
   service_accounts = {
@@ -31,6 +31,15 @@ locals {
 
   # クエリを実行するサービスアカウント
   job_users = ["sa-ingest", "sa-dbt", "sa-workflows", "sa-looker"]
+
+  # 処理の起動に関わる、プロジェクト単位の権限
+  project_roles = [
+    { sa = "sa-workflows", role = "roles/logging.logWriter" },
+    { sa = "sa-workflows", role = "projects/${var.project_id}/roles/runJobWatcher" },
+    { sa = "sa-eventarc", role = "roles/eventarc.eventReceiver" },
+    { sa = "sa-eventarc", role = "roles/workflows.invoker" },
+    { sa = "sa-scheduler", role = "roles/workflows.invoker" },
+  ]
 }
 
 resource "google_service_account" "this" {
@@ -65,4 +74,36 @@ resource "google_project_iam_member" "bigquery_job_user" {
   project = var.project_id
   role    = "roles/bigquery.jobUser"
   member  = google_service_account.this[each.value].member
+}
+
+resource "google_project_iam_member" "this" {
+  for_each = { for r in local.project_roles : "${r.sa}/${r.role}" => r }
+
+  project = var.project_id
+  role    = each.value.role
+  member  = google_service_account.this[each.value.sa].member
+
+  # for_each のキーを plan の時点で決めるため、カスタムロールは名前で指定し、作る順番だけをここで決める
+  depends_on = [google_project_iam_custom_role.run_job_watcher]
+}
+
+# Workflows がジョブの終了を待つには、実行の状態を読む権限が要る。
+# 定義済みのロール（roles/run.viewer）はサービスの設定まで読めるため、必要な 2 つだけにする
+resource "google_project_iam_custom_role" "run_job_watcher" {
+  project     = var.project_id
+  role_id     = "runJobWatcher"
+  title       = "Cloud Run Job の終了を待つ"
+  description = "Workflows のコネクタが、起動した Cloud Run Job の実行の状態を確かめるための権限"
+  permissions = ["run.operations.get", "run.executions.get"]
+}
+
+# GCS のサービスエージェントが Eventarc にイベントを送るための権限（付け忘れるとイベントが届かない）
+data "google_storage_project_service_account" "this" {
+  project = var.project_id
+}
+
+resource "google_project_iam_member" "gcs_pubsub_publisher" {
+  project = var.project_id
+  role    = "roles/pubsub.publisher"
+  member  = data.google_storage_project_service_account.this.member
 }

@@ -3,12 +3,20 @@
 # 有効にする API。フェーズが進んだら追加する
 locals {
   services = [
+    "artifactregistry.googleapis.com",
     "bigquery.googleapis.com",
     "cloudresourcemanager.googleapis.com",
+    "cloudscheduler.googleapis.com",
+    "eventarc.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
+    "logging.googleapis.com",
+    "pubsub.googleapis.com",
+    "run.googleapis.com",
     "serviceusage.googleapis.com",
     "storage.googleapis.com",
+    "workflowexecutions.googleapis.com",
+    "workflows.googleapis.com",
   ]
 }
 
@@ -43,4 +51,20 @@ module "iam" {
   project_id   = var.project_id
   bucket_names = module.storage.bucket_names
   dataset_ids  = module.bigquery.dataset_ids
+
+  depends_on = [google_project_service.this]
+}
+
+module "pipeline" {
+  source = "../../modules/pipeline"
+
+  project_id             = var.project_id
+  region                 = var.region
+  image_tag              = var.image_tag
+  service_account_emails = module.iam.service_account_emails
+  landing_bucket         = module.storage.bucket_names["landing"]
+  workflows_dir          = "${path.root}/../../../workflows"
+
+  # Eventarc のトリガーより先に、GCS のサービスエージェントの権限を付けておく
+  depends_on = [google_project_service.this, module.iam]
 }

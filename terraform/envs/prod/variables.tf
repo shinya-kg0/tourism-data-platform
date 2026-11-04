@@ -18,3 +18,8 @@ variable "github_repository" {
   description = "Workload Identity 連携を許可する GitHub リポジトリ（owner/repo）"
   type        = string
 }
+
+variable "image_tag" {
+  description = "ingest・dbt のコンテナイメージのタグ（コミットの SHA。scripts/build_push.sh で送ったもの）"
+  type        = string
+}

@@ -7,7 +7,7 @@
 - 可視化：Looker Studio（marts のみ参照）
 - インフラ：Terraform、CI/CD：GitHub Actions（Workload Identity 連携）
 
-詳細は [仕様書](docs/spec_tourism_data_platform.md) を参照してください。
+詳細は [仕様書](docs/spec_tourism_data_platform.md) を参照してください。デプロイと運用の手順は [運用手順](docs/operations.md) にあります。
 
 ## ディレクトリ構成
 
@@ -50,6 +50,8 @@ gs://{project}-landing/{survey}/{period_type}/{year}[_Q{quarter}][_{release}].{x
 ```
 
 例：`overnight/annual/2026.xlsx`、`consumption/quarterly/2026_Q3_preliminary1.xlsx`（ルールの詳細は仕様書 4.2）
+
+アップロードすると Eventarc → Workflows → Cloud Run Job「ingest」で raw に取り込まれ、毎日 04:00 JST の transform で marts に反映されます。
 
 ## 出典
 

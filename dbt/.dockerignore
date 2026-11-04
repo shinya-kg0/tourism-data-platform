@@ -1,0 +1,6 @@
+.venv/
+.user.yml
+target/
+logs/
+dbt_packages/
+Dockerfile
