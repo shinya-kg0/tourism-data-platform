@@ -12,7 +12,7 @@ select
     pref_code,
     area_name,
     {{ overnight_breakdown('客室稼働率') }},
-    -- Excel は％。Looker Studio で書式を付けやすいよう 0〜1 にする
+    -- Excel は％。BI ツールでパーセントの書式を付けやすいよう 0〜1 にする
     value / 100 as room_occupancy_rate,
     flag,
     release_status,
