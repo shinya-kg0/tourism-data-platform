@@ -1,4 +1,4 @@
--- ダッシュボード 3. 地域分析：都道府県 × 年の延べ宿泊者数・訪問率・1 泊当たり消費単価・推計消費額（色分け地図）
+-- 想定したページ「3. 地域分析」（D-09）：都道府県 × 年の延べ宿泊者数・訪問率・1 泊当たり消費単価・推計消費額（色分け地図）
 
 with periods as (
     select * from {{ ref('int_consumption_yearly_periods') }}
@@ -25,7 +25,7 @@ occupancy as (
 select
     inbound.pref_code,
     pref.pref_name,
-    -- Looker Studio の地図（国の下位区分）で使う ISO 3166-2 のコード
+    -- BI ツールの地図で使う ISO 3166-2 のコード
     concat('JP-', inbound.pref_code) as iso_3166_2,
     pref.region,
     pref.transport_bureau,

@@ -1,4 +1,4 @@
--- ダッシュボード 1. サマリ：全国の主要指標（年）
+-- 想定したページ「1. サマリ」（D-09）：全国の主要指標（年）
 
 with national as (
     select year, target, guest_nights
@@ -51,7 +51,7 @@ joined as (
 
 select
     year,
-    -- Looker Studio の時系列グラフ用（年の 1 月 1 日）
+    -- BI ツールの時系列グラフ用（年の 1 月 1 日）
     date(year, 1, 1) as year_date,
     total_guest_nights,
     japanese_guest_nights,

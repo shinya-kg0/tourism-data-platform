@@ -1,4 +1,4 @@
--- ダッシュボード 5. 宿泊の受け入れ：地域（全国・都道府県）× 施設タイプ × 年の客室稼働率・延べ宿泊者数・施設数
+-- 想定したページ「5. 宿泊の受け入れ」（D-09）：地域（全国・都道府県）× 施設タイプ × 年の客室稼働率・延べ宿泊者数・施設数
 
 with occupancy as (
     select year, area_type, pref_code, area_name, facility_type, room_occupancy_rate

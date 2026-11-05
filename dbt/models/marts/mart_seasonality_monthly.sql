@@ -1,4 +1,4 @@
--- ダッシュボード 4. 季節性：国籍 × 年 × 月の外国人延べ宿泊者数（全国、従業者数 10 人以上の施設）
+-- 想定したページ「4. 季節性」（D-09）：国籍 × 年 × 月の外国人延べ宿泊者数（全国、従業者数 10 人以上の施設）
 
 with nights as (
     select year, month, nationality_code, foreign_guest_nights
