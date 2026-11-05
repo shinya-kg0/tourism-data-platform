@@ -12,6 +12,8 @@ variable "region" {
 variable "alert_email" {
   description = "アラートの通知先メールアドレス"
   type        = string
+  # 公開リポジトリの PR に plan の結果をコメントするため、表示しない
+  sensitive = true
 }
 
 variable "github_repository" {

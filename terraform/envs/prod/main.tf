@@ -15,6 +15,7 @@ locals {
     "run.googleapis.com",
     "serviceusage.googleapis.com",
     "storage.googleapis.com",
+    "sts.googleapis.com",
     "workflowexecutions.googleapis.com",
     "workflows.googleapis.com",
   ]
@@ -48,9 +49,11 @@ module "bigquery" {
 module "iam" {
   source = "../../modules/iam"
 
-  project_id   = var.project_id
-  bucket_names = module.storage.bucket_names
-  dataset_ids  = module.bigquery.dataset_ids
+  project_id        = var.project_id
+  bucket_names      = module.storage.bucket_names
+  dataset_ids       = module.bigquery.dataset_ids
+  github_repository = var.github_repository
+  tfstate_bucket    = "${var.project_id}-tfstate"
 
   depends_on = [google_project_service.this]
 }

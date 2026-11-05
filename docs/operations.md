@@ -33,6 +33,11 @@ terraform apply tfplan
     -target=module.pipeline.google_artifact_registry_repository.this
   ```
 
+- `local.services` に API を足すときは、先に API だけを apply する（`-target='google_project_service.this["<API名>"]'`）。
+  まとめて apply すると、`module.iam` が API の有効化を待つため GCS のサービスエージェントのアドレスが apply のときまで決まらず、
+  `gcs_pubsub_publisher` が置き換え（いったん外して付け直す）になる。その間のアップロードはイベントが届かないおそれがある。
+- `terraform.tfvars` の `image_tag` は古いことがある。イメージを変えない apply でも、本番のジョブが今使っているタグを `-var` で渡す
+  （`gcloud run jobs describe dbt --region=asia-northeast1 --format='value(spec.template.spec.template.spec.containers[0].image)'`）。
 - Eventarc の API を有効にした直後は、Eventarc のサービスエージェントの権限が行き渡るまで、トリガーの作成が
   `storage.buckets.get` の権限エラーで失敗することがある。数分おいてから apply をやり直せば通る。
 
@@ -125,3 +130,40 @@ DBT_RAW_DATASET=dbt_${DBT_USER}_raw uv run dbt build
 - 開発用のデータセットのテーブルには有効期限を付けておく（本番の raw と同じスキーマ：`terraform/modules/bigquery/schemas/`）。
 
 rejected と failed をメールで知らせる仕組み（仕様書 13 章）は、フェーズ5で追加する。
+
+## 6. PR の CI（GitHub Actions）
+
+`.github/workflows/ci.yml`（仕様書 12 章）。PR を開く・更新すると次が動く。
+
+| ジョブ | 認証（D-18） | 内容 |
+|---|---|---|
+| `lint-test` | なし | ingest の `ruff check` と `pytest` |
+| `terraform-plan` | `sa-github-plan` | `fmt -check` → `validate` → `plan -lock=false`。結果を PR にコメントする（同じコメントを書き換える） |
+| `dbt-ci` | `sa-github-dbt-ci` | 本番の raw を読み、`ci_pr_{番号}` に `dbt build --target ci` |
+| `dbt-ci-cleanup` | `sa-github-dbt-ci` | PR を閉じたら `ci_pr_{番号}` を消す |
+
+- フォークからの PR は認証のトークンを受け取れないため、`lint-test` だけが動く。
+- `terraform-plan` の `image_tag` は、本番のジョブが今使っているタグ。イメージの差分は出ない。
+
+### GitHub 側の設定（手作業。リポジトリの Settings → Secrets and variables → Actions）
+
+| 種類 | 名前 | 値 |
+|---|---|---|
+| 変数 | `GCP_PROJECT_ID` | `tourism-data-platform` |
+| 変数 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | `terraform output -raw github_workload_identity_provider` の値 |
+| シークレット | `ALERT_EMAIL` | `terraform.tfvars` の `alert_email`（plan に渡すだけ。`sensitive` なので表示されない） |
+
+```bash
+gh variable set GCP_PROJECT_ID --body tourism-data-platform
+gh variable set GCP_WORKLOAD_IDENTITY_PROVIDER --body "$(cd terraform/envs/prod && terraform output -raw github_workload_identity_provider)"
+gh secret set ALERT_EMAIL   # 値を入力する
+```
+
+### `ci_pr_*` が残ったとき
+
+`dbt-ci-cleanup` が失敗したり、ワークフローができる前に閉じた PR があったりすると、データセットが残る。
+
+```bash
+bq ls --project_id=tourism-data-platform | grep ci_pr_
+bq rm -r -f -d tourism-data-platform:ci_pr_<番号>
+```

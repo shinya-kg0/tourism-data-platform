@@ -1,0 +1,169 @@
+# PR のときに動く CI（仕様書 12 章）
+# GCP を使うジョブは Workload Identity 連携でキーなしに認証する（D-18）。
+# フォークからの PR は認証のトークンを受け取れないため、lint-test だけを動かす
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: read
+
+concurrency:
+  # 同じ PR で新しいコミットが来たら古い実行を止める。閉じたときの片付けは別のグループにして止めない
+  group: ci-${{ github.event.pull_request.number }}-${{ github.event.action == 'closed' && 'cleanup' || 'check' }}
+  cancel-in-progress: true
+
+env:
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GCP_REGION: asia-northeast1
+  PR_NUMBER: ${{ github.event.pull_request.number }}
+
+jobs:
+  lint-test:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ingest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run pytest
+
+  terraform-plan:
+    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    defaults:
+      run:
+        working-directory: terraform/envs/prod
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+      TF_VAR_github_repository: ${{ github.repository }}
+      TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: sa-github-plan@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.5
+          terraform_wrapper: false
+
+      - name: fmt
+        run: terraform fmt -check -recursive ../..
+      - name: init
+        run: terraform init -input=false -backend-config="bucket=${GCP_PROJECT_ID}-tfstate" -backend-config="prefix=envs/prod"
+      - name: validate
+        run: terraform validate -no-color
+
+      # 本番のジョブが今使っているタグを渡し、イメージの差分が出ないようにする（新しいイメージは main へのマージで送る）
+      - name: image_tag
+        run: |
+          image_tag() {
+            gcloud run jobs describe "$1" --region="$GCP_REGION" \
+              --format='value(spec.template.spec.template.spec.containers[0].image)' | sed 's/.*://'
+          }
+          ingest_tag=$(image_tag ingest)
+          dbt_tag=$(image_tag dbt)
+          if [ "$ingest_tag" != "$dbt_tag" ]; then
+            echo "::error::ingest と dbt のイメージのタグが違います（ingest=$ingest_tag, dbt=$dbt_tag）"
+            exit 1
+          fi
+          echo "TF_VAR_image_tag=$ingest_tag" >> "$GITHUB_ENV"
+
+      # plan は tfstate を書き換えないので、ロックしない（sa-github-plan には書き込みの権限がない）
+      - name: plan
+        run: |
+          set -o pipefail
+          terraform plan -lock=false -input=false -no-color 2>&1 | tee plan.txt
+
+      - name: PR にコメント
+        if: always() && hashFiles('terraform/envs/prod/plan.txt') != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const marker = "<!-- terraform-plan -->";
+            const lines = fs.readFileSync("terraform/envs/prod/plan.txt", "utf8").split("\n")
+              .filter((l) => !/: (Refreshing state|Reading|Read complete)/.test(l));
+            let plan = lines.join("\n").trim();
+            const limit = 60000;
+            if (plan.length > limit) plan = plan.slice(0, limit) + "\n…（長いため省略。全文はジョブのログを参照）";
+            const summary = (plan.match(/^(Plan: .*|No changes\..*|Error: .*)$/m) || ["（結果の要約が見つかりません）"])[0];
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = `${marker}\n### terraform plan（envs/prod）\n\n**${summary}**\n\n` +
+              `<details><summary>plan の全文</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>\n\n` +
+              `コミット ${context.sha.slice(0, 7)}・[ジョブのログ](${run})`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const mine = comments.find((c) => c.user.type === "Bot" && c.body.startsWith(marker));
+            if (mine) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+  # 本番の raw を読み、ci_pr_{番号} に書き出す（D-20）
+  dbt-ci:
+    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: dbt
+    env:
+      DBT_PROFILES_DIR: .
+      DBT_USER: ci  # profiles.yml の dev ターゲットが参照する。ci ターゲットでは使わない
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: sa-github-dbt-ci@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run dbt deps
+      - run: uv run dbt build --target ci
+
+  dbt-ci-cleanup:
+    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: sa-github-dbt-ci@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: ci_pr_${{ github.event.pull_request.number }} を消す
+        run: |
+          dataset="${GCP_PROJECT_ID}:ci_pr_${PR_NUMBER}"
+          if bq show --format=none "$dataset" 2>/dev/null; then
+            bq rm -r -f -d "$dataset"
+            echo "消しました：$dataset"
+          else
+            echo "ありません：$dataset"
+          fi
