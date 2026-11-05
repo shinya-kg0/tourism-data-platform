@@ -1,15 +1,17 @@
 # サービスアカウントと、データ・処理への権限（仕様書 11 章、D-17）
 # 個々の Cloud Run Job を実行する権限はジョブ単位で付けるため、modules/pipeline に置く。
-# Workload Identity 連携は CI/CD のフェーズで追加する
+# GitHub Actions の Workload Identity 連携は github.tf に置く
 
 locals {
   service_accounts = {
-    "sa-ingest"    = "取り込み処理（Cloud Run Job「ingest」）"
-    "sa-dbt"       = "dbt（Cloud Run Job「dbt」）"
-    "sa-workflows" = "Workflows（ingest / transform）"
-    "sa-eventarc"  = "Eventarc のトリガー"
-    "sa-scheduler" = "Cloud Scheduler"
-    "sa-looker"    = "Looker Studio のデータ読み取り（marts のみ）"
+    "sa-ingest"        = "取り込み処理（Cloud Run Job「ingest」）"
+    "sa-dbt"           = "dbt（Cloud Run Job「dbt」）"
+    "sa-workflows"     = "Workflows（ingest / transform）"
+    "sa-eventarc"      = "Eventarc のトリガー"
+    "sa-scheduler"     = "Cloud Scheduler"
+    "sa-looker"        = "Looker Studio のデータ読み取り（marts のみ）"
+    "sa-github-plan"   = "GitHub Actions：PR の terraform plan（読み取りのみ）"
+    "sa-github-dbt-ci" = "GitHub Actions：PR の dbt build（ci_pr_{番号} に書き出す）"
   }
 
   bucket_roles = [
@@ -27,6 +29,7 @@ locals {
     { sa = "sa-dbt", dataset = "marts", role = "roles/bigquery.dataEditor" },
     { sa = "sa-workflows", dataset = "ops", role = "roles/bigquery.dataEditor" },
     { sa = "sa-looker", dataset = "marts", role = "roles/bigquery.dataViewer" },
+    { sa = "sa-github-dbt-ci", dataset = "raw", role = "roles/bigquery.dataViewer" },
   ]
 
   # クエリを実行するサービスアカウント
@@ -39,6 +42,11 @@ locals {
     { sa = "sa-eventarc", role = "roles/eventarc.eventReceiver" },
     { sa = "sa-eventarc", role = "roles/workflows.invoker" },
     { sa = "sa-scheduler", role = "roles/workflows.invoker" },
+    # plan はすべてのリソースとその IAM を読むが、書き込みはしない
+    { sa = "sa-github-plan", role = "roles/viewer" },
+    { sa = "sa-github-plan", role = "roles/iam.securityReviewer" },
+    # ジョブの実行と ci_pr_{番号} の作成。作ったデータセットの所有者になるので、PR を閉じたときに消せる
+    { sa = "sa-github-dbt-ci", role = "roles/bigquery.user" },
   ]
 }
 
