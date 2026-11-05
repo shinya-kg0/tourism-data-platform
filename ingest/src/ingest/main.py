@@ -3,6 +3,7 @@
 引数で GCS のオブジェクト名と世代番号を受け取り、1 ファイルを raw 層へ取り込む（仕様書 5.1）。
 
     ingest overnight/annual/2025.xlsx --generation 1730000000000000
+    ingest consumption/quarterly/2026_Q3_preliminary1.xlsx --generation 1730000000000000
 
 環境変数:
     GCP_PROJECT_ID          必須
@@ -25,11 +26,11 @@ from pathlib import Path
 
 from ingest.bq_writer import Warehouse
 from ingest.gcs import Store
-from ingest.parsers import overnight
+from ingest.parsers import consumption, overnight
 from ingest.path_rules import PathRuleError, parse_path
 from ingest.validation import StructureError
 
-PARSERS = {"overnight": overnight}
+PARSERS = {"overnight": overnight, "consumption": consumption}
 
 log = logging.getLogger("ingest")
 
@@ -46,14 +47,12 @@ def run(object_name: str, generation: int, store, warehouse, execution_id: str |
     warehouse.insert_log(**base, status="running", workflow_execution_id=execution_id)
     try:
         src = parse_path(object_name)
-        if src.survey not in PARSERS:
-            raise PathRuleError(f"{src.survey} の取り込みはまだ実装されていません")
         parser = PARSERS[src.survey]
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / Path(object_name).name
             md5 = store.download(object_name, generation, path)
-            df, format_version = parser.parse_workbook(path, src.year, parser.load_header_defs())
+            df, format_version = parser.parse_workbook(path, src, parser.load_header_defs())
 
         df = df.assign(
             release_status=src.release_status,

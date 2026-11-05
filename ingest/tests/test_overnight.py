@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from ingest.parsers.overnight import FORMAT_NEW, FORMAT_OLD, parse_sheet, parse_workbook, read_new_header
+from ingest.path_rules import parse_path
 from ingest.validation import StructureError
 
 COLUMNS = [
@@ -102,7 +103,7 @@ def workbook(tmp_path):
 
 def test_parse_workbook(workbook):
     defs = {"第2表": {"table_id": "第2表", "periods": ["年計", "1月"], "columns": COLUMNS}}
-    df, fmt = parse_workbook(workbook, 2025, defs)
+    df, fmt = parse_workbook(workbook, parse_path("overnight/annual/2025.xlsx"), defs)
     assert fmt == FORMAT_NEW
     assert set(df["table_id"]) == {"第2表"}  # 定義のない第3表は読まない
     assert sorted(df["month"].unique()) == [0, 1]
@@ -112,4 +113,4 @@ def test_parse_workbook(workbook):
 def test_parse_workbook_rejects_missing_sheet(workbook):
     defs = {"第2表": {"table_id": "第2表", "periods": ["年計", "1月", "2月"], "columns": COLUMNS}}
     with pytest.raises(StructureError, match="2月"):
-        parse_workbook(workbook, 2025, defs)
+        parse_workbook(workbook, parse_path("overnight/annual/2025.xlsx"), defs)

@@ -1,0 +1,74 @@
+version: 2
+
+models:
+  - name: int_consumption_yearly_periods
+    description: |
+      消費動向調査で、年ごとの集計にどの期を使うか（1 行 = 年）。暦年の集計表があれば暦年を使う。
+      2020・2021 年のように暦年の集計表がなく 1 期分しかない過去の年は、その期を使い period_label で注記する（仕様書 3.2）。
+      公表途中の年（最新の暦年より後）は含めない。
+    columns:
+      - name: year
+        description: 年
+        data_tests: [unique, not_null]
+      - name: quarter
+        description: 使う期（0＝暦年）
+        data_tests: [not_null]
+      - name: period_label
+        description: 暦年 / 1–3月期のみ など
+        data_tests: [not_null]
+
+  - name: int_nationality_yearly
+    description: |
+      国籍 × 年。外国人延べ宿泊者数（宿泊旅行統計 参考第1表、従業者数 10 人以上の施設、全国の年計）と、
+      1 人 1 回当たり旅行消費単価（表3-1）・平均泊数（表4-1）を結合する。片方の調査にしかない年・国籍も残す。
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [nationality_code, year]
+    columns:
+      - name: nationality_code
+        description: 国籍コード（ALL＝全体）
+        data_tests: [not_null]
+      - name: year
+        description: 年
+        data_tests: [not_null]
+      - name: foreign_guest_nights
+        description: 外国人延べ宿泊者数（人泊、従業者数 10 人以上の施設）
+      - name: consumption_period_label
+        description: 消費動向調査のどの期の値か（int_consumption_yearly_periods）
+      - name: consumption_respondents
+        description: 表3-1 の回答数
+      - name: spend_per_trip
+        description: 1 人 1 回当たり旅行消費単価（円）
+      - name: avg_nights
+        description: 平均泊数（泊）
+
+  - name: int_prefecture_inbound_yearly
+    description: |
+      都道府県 × 年。外国人延べ宿泊者数（第2表、全施設）× 1 人 1 泊当たり旅行消費単価（表3-4）で、外国人の推計消費額を出す。
+      宿泊を伴う消費の目安で、日帰りの消費は含まない。消費単価が暦年の値でない年（2020 年など）は推計しない。
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [pref_code, year]
+    columns:
+      - name: year
+        description: 年
+        data_tests: [not_null]
+      - name: pref_code
+        description: 都道府県コード
+        data_tests: [not_null]
+      - name: total_guest_nights
+        description: 延べ宿泊者数・全体（人泊）
+      - name: foreign_guest_nights
+        description: 延べ宿泊者数・外国人（人泊）
+      - name: consumption_period_label
+        description: 消費単価がどの期の値か
+      - name: spend_respondents
+        description: 表3-4 の回答数
+      - name: spend_per_night
+        description: 1 人 1 泊当たり旅行消費単価（円）
+      - name: is_low_sample
+        description: 回答数が var('min_respondents') 未満（値がぶれやすい）。値がない年は NULL
+      - name: estimated_foreign_spend
+        description: 外国人の推計消費額（円）＝ 外国人延べ宿泊者数 × 1 人 1 泊当たり旅行消費単価

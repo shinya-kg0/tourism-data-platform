@@ -1,16 +1,22 @@
 version: 2
 
+# ダッシュボードのページと 1 対 1（D-09）。全 mart 共通：
+#   year_date      年の 1 月 1 日（Looker Studio の時系列グラフ用）
+#   is_covid_period コロナの影響期間（2020〜2022 年）。調査の中止や急減があるため、グラフで区別する
+
 models:
   - name: mart_kpi_yearly
     description: |
-      ダッシュボード「1. サマリ」用。全国の延べ宿泊者数（全体・日本人・外国人）と外国人比率、前年比（年）。
-      日本人 = 全体 − 外国人で計算している。
+      ダッシュボード「1. サマリ」用。全国の主要指標（年）。
+      延べ宿泊者数（全体・日本人・外国人）、外国人比率、客室稼働率（宿泊旅行統計）と、
+      1 人 1 回当たり旅行消費単価・平均泊数（消費動向調査、全国籍・地域）。日本人 = 全体 − 外国人。
+      2020・2021 年の消費単価は四半期 1 期分の値（consumption_period_label）。2021・2022 年は一部の空港での試算値。
     columns:
       - name: year
         description: 年
         data_tests: [unique, not_null]
       - name: year_date
-        description: 年の 1 月 1 日（Looker Studio の時系列グラフ用）
+        description: 年の 1 月 1 日
         data_tests: [unique, not_null]
       - name: total_guest_nights
         description: 延べ宿泊者数・全体（人泊）
@@ -39,5 +45,306 @@ models:
         description: 延べ宿泊者数・日本人の前年比
       - name: foreign_guest_nights_yoy
         description: 延べ宿泊者数・外国人の前年比
+      - name: room_occupancy_rate
+        description: 客室稼働率・全国（0〜1）
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: spend_per_trip
+        description: 訪日外国人の 1 人 1 回当たり旅行消費単価（円）。パッケージツアー参加費の内訳を含まないため、報道発表の値とは一致しない
+      - name: spend_per_trip_yoy
+        description: 1 人 1 回当たり旅行消費単価の前年比
+      - name: avg_nights
+        description: 訪日外国人の平均泊数（泊）
+      - name: consumption_period_label
+        description: 消費動向調査の値がどの期のものか（暦年 / 1–3月期のみ など）
       - name: is_covid_period
-        description: コロナの影響期間（2020〜2022 年）。調査の中止や急減があるため、グラフで区別する
+        description: コロナの影響期間（2020〜2022 年）
+
+  - name: mart_nationality_yearly
+    description: |
+      ダッシュボード「2. 国籍分析」用。国籍 × 年。散布図（宿泊者数 × 消費単価、円の大きさ＝平均泊数）と推移に使う。
+      宿泊者数は参考第1表（従業者数 10 人以上の施設）のため、サマリの外国人延べ宿泊者数（全施設）より小さい。
+      国籍全体の行（is_total）を含むので、国籍どうしを比べるグラフでは is_total = false で絞る。
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [nationality_code, year]
+    columns:
+      - name: nationality_code
+        description: 国籍コード
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('seed_nationality')
+                field: nationality_code
+      - name: nationality_name
+        description: 国籍名
+      - name: region
+        description: 地域区分
+      - name: sort_order
+        description: 表示の順番
+      - name: is_total
+        description: 国籍全体の行か
+      - name: year
+        description: 年
+        data_tests: [not_null]
+      - name: year_date
+        description: 年の 1 月 1 日
+      - name: foreign_guest_nights
+        description: 外国人延べ宿泊者数（人泊、従業者数 10 人以上の施設）
+      - name: foreign_guest_nights_share
+        description: 外国人延べ宿泊者数に占める割合（0〜1）
+      - name: foreign_guest_nights_yoy
+        description: 外国人延べ宿泊者数の前年比
+      - name: spend_per_trip
+        description: 1 人 1 回当たり旅行消費単価（円）
+      - name: spend_per_trip_yoy
+        description: 1 人 1 回当たり旅行消費単価の前年比
+      - name: avg_nights
+        description: 平均泊数（泊）
+      - name: consumption_respondents
+        description: 消費単価の回答数
+      - name: is_low_sample
+        description: 消費単価の回答数が var('min_respondents') 未満（値がぶれやすい）。値がない年は NULL
+      - name: consumption_period_label
+        description: 消費動向調査の値がどの期のものか
+      - name: is_covid_period
+        description: コロナの影響期間（2020〜2022 年）。2021・2022 年は国籍別の値がない、または試算値
+
+  - name: mart_nationality_spend_category_yearly
+    description: |
+      ダッシュボード「2. 国籍分析」用。国籍 × 費目 × 年（費目別の積み上げ棒）。
+      spend_per_visitor（購入率 × 購入者単価）の日本滞在中の費目の合計は、mart_nationality_yearly の spend_per_trip と一致する（2018 年以降）。
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [nationality_code, spend_category, year]
+    columns:
+      - name: nationality_code
+        description: 国籍コード
+        data_tests: [not_null]
+      - name: nationality_name
+        description: 国籍名
+      - name: region
+        description: 地域区分
+      - name: nationality_sort_order
+        description: 国籍の表示の順番
+      - name: is_total
+        description: 国籍全体の行か
+      - name: year
+        description: 年
+        data_tests: [not_null]
+      - name: year_date
+        description: 年の 1 月 1 日
+      - name: spend_stage
+        description: 旅行前 / 日本滞在中
+      - name: spend_category
+        description: 費目
+        data_tests: [not_null]
+      - name: category_sort_order
+        description: 費目の表示の順番
+      - name: purchasers
+        description: 購入者数
+      - name: purchase_rate
+        description: 購入率（0〜1）
+      - name: spend_per_purchaser
+        description: 購入者単価（円）
+      - name: spend_per_visitor
+        description: 1 人当たり支出（円）＝ 購入率 × 購入者単価
+      - name: in_japan_spend_share
+        description: 日本滞在中の支出に占める割合（0〜1）。旅行前の費目は NULL
+      - name: consumption_period_label
+        description: 消費動向調査の値がどの期のものか
+      - name: is_covid_period
+        description: コロナの影響期間
+
+  - name: mart_prefecture_yearly
+    description: |
+      ダッシュボード「3. 地域分析」用。都道府県 × 年（色分け地図、推計消費額）。
+      推計消費額 = 外国人延べ宿泊者数（第2表、全施設）× 1 人 1 泊当たり旅行消費単価（表3-4）。宿泊を伴う消費の目安で、日帰りは含まない。
+      表3-4 がない年（2017 年以前、2020〜2022 年）は消費単価と推計消費額が NULL。回答数の少ない県は is_low_sample で注記する。
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [pref_code, year]
+    columns:
+      - name: pref_code
+        description: 都道府県コード
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('seed_prefecture')
+                field: pref_code
+      - name: pref_name
+        description: 都道府県名
+      - name: iso_3166_2
+        description: ISO 3166-2 のコード（JP-01 など）。Looker Studio の地図で「国の下位区分（第 1 レベル）」として使う
+      - name: region
+        description: 地方区分
+      - name: transport_bureau
+        description: 運輸局等
+      - name: year
+        description: 年
+        data_tests: [not_null]
+      - name: year_date
+        description: 年の 1 月 1 日
+      - name: total_guest_nights
+        description: 延べ宿泊者数・全体（人泊）
+      - name: foreign_guest_nights
+        description: 延べ宿泊者数・外国人（人泊）
+      - name: foreign_share
+        description: 外国人比率（0〜1）
+      - name: foreign_guest_nights_yoy
+        description: 外国人延べ宿泊者数の前年比
+      - name: room_occupancy_rate
+        description: 客室稼働率（0〜1）
+      - name: visit_rate
+        description: 訪日外国人（全国籍・地域）の訪問率（0〜1）
+      - name: spend_respondents
+        description: 1 泊当たり消費単価の回答数
+      - name: spend_per_night
+        description: 1 人 1 泊当たり旅行消費単価（円）
+      - name: is_low_sample
+        description: 回答数が var('min_respondents') 未満（値がぶれやすい）。値がない年は NULL
+      - name: estimated_foreign_spend
+        description: 外国人の推計消費額（円）
+      - name: consumption_period_label
+        description: 消費動向調査の値がどの期のものか
+      - name: is_covid_period
+        description: コロナの影響期間
+
+  - name: mart_prefecture_nationality_yearly
+    description: |
+      ダッシュボード「3. 地域分析」用。都道府県 × 国籍 × 年（都道府県 × 国籍のヒートマップ）。
+      宿泊者数は参考第1表（従業者数 10 人以上の施設）。訪問率（表6-1）と 1 泊当たり消費単価（表3-4）は消費動向調査。
+      県 × 国籍の消費単価は回答数がとても少ないことが多いので、is_low_sample を必ず確かめる。
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [pref_code, nationality_code, year]
+    columns:
+      - name: pref_code
+        description: 都道府県コード
+        data_tests: [not_null]
+      - name: pref_name
+        description: 都道府県名
+      - name: iso_3166_2
+        description: ISO 3166-2 のコード
+      - name: region
+        description: 地方区分
+      - name: nationality_code
+        description: 国籍コード
+        data_tests: [not_null]
+      - name: nationality_name
+        description: 国籍名
+      - name: nationality_region
+        description: 国籍の地域区分
+      - name: nationality_sort_order
+        description: 国籍の表示の順番
+      - name: is_total
+        description: 国籍全体の行か
+      - name: year
+        description: 年
+        data_tests: [not_null]
+      - name: year_date
+        description: 年の 1 月 1 日
+      - name: foreign_guest_nights
+        description: 外国人延べ宿泊者数（人泊、従業者数 10 人以上の施設）
+      - name: nationality_share_in_prefecture
+        description: その県の外国人延べ宿泊者数に占める、この国籍の割合（0〜1）
+      - name: visitors
+        description: その県を訪れた回答者の数（表6-1）
+      - name: visit_rate
+        description: その国籍の訪日客のうち、その県を訪れた割合（0〜1）
+      - name: spend_respondents
+        description: 1 泊当たり消費単価の回答数
+      - name: spend_per_night
+        description: 1 人 1 泊当たり旅行消費単価（円）
+      - name: is_low_sample
+        description: 回答数が var('min_respondents') 未満。値がない組み合わせは NULL
+      - name: is_covid_period
+        description: コロナの影響期間
+
+  - name: mart_seasonality_monthly
+    description: |
+      ダッシュボード「4. 季節性」用。国籍 × 年 × 月の外国人延べ宿泊者数（全国、参考第1表＝従業者数 10 人以上の施設）。
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [nationality_code, year, month]
+    columns:
+      - name: nationality_code
+        description: 国籍コード
+        data_tests: [not_null]
+      - name: nationality_name
+        description: 国籍名
+      - name: region
+        description: 地域区分
+      - name: sort_order
+        description: 表示の順番
+      - name: is_total
+        description: 国籍全体の行か
+      - name: year
+        description: 年
+        data_tests: [not_null]
+      - name: month
+        description: 月（1〜12）
+        data_tests: [not_null]
+      - name: month_date
+        description: 月の 1 日（時系列グラフ用）
+      - name: foreign_guest_nights
+        description: 外国人延べ宿泊者数（人泊）
+      - name: share_of_year
+        description: 年計に占める割合（丸めのため、12 か月の合計はちょうど 1 にならない）
+      - name: foreign_guest_nights_yoy
+        description: 前年同月比
+      - name: is_covid_period
+        description: コロナの影響期間
+
+  - name: mart_occupancy_yearly
+    description: |
+      ダッシュボード「5. 宿泊の受け入れ」用。地域（全国・都道府県）× 宿泊施設タイプ × 年。
+      客室稼働率（第8表）、延べ宿泊者数（第4表）、12 月の施設数（第1表。年計がないため）。facility_type = 全体 は全施設。
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [area_name, facility_type, year]
+    columns:
+      - name: area_type
+        description: national / prefecture
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [national, prefecture]
+      - name: pref_code
+        description: 都道府県コード（全国は NULL）
+      - name: area_name
+        description: 地域名
+        data_tests: [not_null]
+      - name: iso_3166_2
+        description: ISO 3166-2 のコード（全国は NULL）
+      - name: facility_type
+        description: 宿泊施設タイプ
+        data_tests: [not_null]
+      - name: year
+        description: 年
+        data_tests: [not_null]
+      - name: year_date
+        description: 年の 1 月 1 日
+      - name: room_occupancy_rate
+        description: 客室稼働率（0〜1）
+      - name: guest_nights
+        description: 延べ宿泊者数・全体（人泊）
+      - name: foreign_guest_nights
+        description: 延べ宿泊者数・外国人（人泊）
+      - name: foreign_share
+        description: 外国人比率（0〜1）
+      - name: facilities_december
+        description: 12 月の施設数
+      - name: is_covid_period
+        description: コロナの影響期間

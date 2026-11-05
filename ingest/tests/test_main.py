@@ -46,8 +46,8 @@ class FakeWarehouse:
 
 @pytest.fixture
 def fake_parser(monkeypatch):
-    def parse_workbook(path, year, defs):
-        return pd.DataFrame({"year": [year], "value": [1.0]}), "overnight_v2"
+    def parse_workbook(path, src, defs):
+        return pd.DataFrame({"year": [src.year], "value": [1.0]}), "overnight_v2"
 
     monkeypatch.setattr(main.overnight, "parse_workbook", parse_workbook)
     monkeypatch.setattr(main.overnight, "load_header_defs", dict)
@@ -82,7 +82,7 @@ def test_run_rejected_on_bad_path():
 
 
 def test_run_rejected_on_structure_error(monkeypatch, fake_parser):
-    def broken(path, year, defs):
+    def broken(path, src, defs):
         raise StructureError("列数が一致しません")
 
     monkeypatch.setattr(main.overnight, "parse_workbook", broken)

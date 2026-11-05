@@ -41,13 +41,35 @@ terraform apply tfplan
 決まったパスに Excel を置くだけで取り込まれる（パスのルールは仕様書 4.2）。
 
 ```bash
+# 宿泊旅行統計（年確定値）
 gcloud storage cp 2026.xlsx gs://tourism-data-platform-landing/overnight/annual/2026.xlsx
+
+# 消費動向調査（暦年の確報、四半期の速報）
+gcloud storage cp 002025515.xls gs://tourism-data-platform-landing/consumption/annual/2025.xls
+gcloud storage cp 002027756.xlsx gs://tourism-data-platform-landing/consumption/quarterly/2026_Q3_preliminary1.xlsx
 ```
+
+- 消費動向調査は、シートに書かれた期間と公表区分（例：「2026年7-9月期 【1次速報】」）がパスと合わないと rejected になる。
+  観光庁サイトのファイル名は番号だけなので、上げる前にどの期のファイルかを確かめる。
+- 2020 年は 1–3 月期、2021 年は 10–12 月期の集計表しかない。`consumption/quarterly/2020_Q1.xls` のように四半期として上げる。
 
 - 取り込みに成功したファイルは archive バケットへ、ルールや構造に合わないファイルは rejected バケットへ移る。
 - 何度上げ直しても、raw は「調査・年・期・公表区分」の単位で入れ替わるだけ（D-05）。改定されたファイルは、同じパスに上げ直せばよい。
 - 複数のファイルを一度に上げてもよい。raw へのトランザクションがぶつかったときは、ingest がその場で待ってやり直す。
 - marts への反映は、翌朝 04:00 の transform で行われる（D-12）。すぐに反映したいときは、3 の手順で transform を手動で実行する。
+
+### 見出し定義を増やしたあと、取り込み済みの年を取り込み直す
+
+取り込むのは見出し定義（`ingest/header_defs/`）がある表だけなので、表を増やしたら、デプロイしたあとで
+archive にある元ファイルを landing に戻して取り込み直す。名前の世代番号（`__` のあと）を外して戻す。
+
+```bash
+# 例：宿泊旅行統計の各年について、最新の世代を landing に戻す
+for year in $(seq 2016 2025); do
+  src=$(gcloud storage ls "gs://tourism-data-platform-archive/overnight/annual/${year}__*.xlsx" | sort | tail -1)
+  gcloud storage cp "$src" "gs://tourism-data-platform-landing/overnight/annual/${year}.xlsx"
+done
+```
 
 ### 結果の確かめ方
 
@@ -89,5 +111,17 @@ gcloud run jobs executions list --job=dbt --region=asia-northeast1 --limit=5
 | ingestion_log が `rejected` | `error_message`、rejected バケット | パスかファイルを直して landing に上げ直す |
 | ingestion_log が `failed`、Workflows「ingest」が FAILED | Cloud Run Job「ingest」のログ | 一時的なエラーなら、同じファイルを landing に上げ直す |
 | Workflows「transform」が FAILED | Cloud Run Job「dbt」のログ、`ops.dbt_runs` | モデルかデータを直し、`force` を付けて transform を実行する |
+
+## 5. まだデプロイしていない取り込みで dbt を試す
+
+ingest の変更（表の追加など）をデプロイする前に dbt のモデルを作るときは、手元で解析した結果を
+開発用のデータセットに読み込み、`DBT_RAW_DATASET` で dbt の読み先を差し替える。本番の `raw` には書かない。
+
+```bash
+cd dbt
+DBT_RAW_DATASET=dbt_${DBT_USER}_raw uv run dbt build
+```
+
+- 開発用のデータセットのテーブルには有効期限を付けておく（本番の raw と同じスキーマ：`terraform/modules/bigquery/schemas/`）。
 
 rejected と failed をメールで知らせる仕組み（仕様書 13 章）は、フェーズ5で追加する。

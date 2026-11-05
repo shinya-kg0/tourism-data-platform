@@ -37,3 +37,57 @@ seeds:
         description: 地方区分（8 区分）
       - name: transport_bureau
         description: 運輸局等。長野県は北陸信越運輸局、福井県は中部運輸局に含まれる（宿泊旅行統計の注記どおり）
+
+  - name: seed_nationality
+    description: |
+      国籍・地域のマスタ（D-10）。2 つの調査の表記の違い（宿泊「アメリカ」「イギリス」／消費動向「米国」「英国」）を吸収して結合する。
+      メキシコ・北欧・中東は消費動向調査の 2026 年からの区分で、宿泊旅行統計にはない（その年からは「その他」の範囲も違う）。
+    config:
+      column_types:
+        nationality_code: string
+        name_ja: string
+        overnight_label: string
+        consumption_label: string
+        region: string
+        sort_order: int64
+    columns:
+      - name: nationality_code
+        description: 国籍コード（ISO 3166-1 の 2 文字。ALL＝全体、NORDIC・MIDEAST・OTHER は複数国の区分）
+        data_tests: [unique, not_null]
+      - name: name_ja
+        description: 表示名
+        data_tests: [unique, not_null]
+      - name: overnight_label
+        description: 宿泊旅行統計 参考第1表の列名（ALL は「外国人延べ宿泊者数」）
+        data_tests: [unique]
+      - name: consumption_label
+        description: 消費動向調査の列名（ALL は「全国籍･地域」。2017 年以前の「全体」は staging で読み替える）
+        data_tests: [unique, not_null]
+      - name: region
+        description: 地域区分（東アジア、東南アジア、欧州など）
+      - name: sort_order
+        description: 表示の順番（消費動向調査の列の順）
+
+  - name: seed_spend_category
+    description: 消費動向調査 表2-1 の費目のマスタ。2017 年以前の名前（宿泊料金、娯楽サービス費）を今の名前にそろえる
+    config:
+      column_types:
+        consumption_label: string
+        spend_category: string
+        spend_stage: string
+        sort_order: int64
+    columns:
+      - name: consumption_label
+        description: Excel 上の費目名
+        data_tests: [unique, not_null]
+      - name: spend_category
+        description: そろえた後の費目名
+        data_tests: [not_null]
+      - name: spend_stage
+        description: 旅行前 / 日本滞在中
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [旅行前, 日本滞在中]
+      - name: sort_order
+        description: 表示の順番

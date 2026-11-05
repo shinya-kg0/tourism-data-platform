@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from ingest.path_rules import SourceFile
 from ingest.validation import StructureError, check_column_count, check_labels, check_rows, normalize_label
 
 SURVEY = "overnight"
@@ -130,8 +131,9 @@ def parse_sheet(df: pd.DataFrame, columns: list[dict], where: str) -> tuple[pd.D
     return long, fmt
 
 
-def parse_workbook(source, year: int, header_defs: dict[str, dict]) -> tuple[pd.DataFrame, str]:
+def parse_workbook(source, src: SourceFile, header_defs: dict[str, dict]) -> tuple[pd.DataFrame, str]:
     """1 年分の Excel を縦持ちに変換する。(raw に入れる DataFrame, 形式のバージョン) を返す"""
+    year = src.year
     xl = pd.ExcelFile(source)
     sheets: dict[str, dict[str, str]] = {}
     for name in xl.sheet_names:

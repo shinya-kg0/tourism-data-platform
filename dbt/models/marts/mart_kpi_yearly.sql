@@ -1,5 +1,4 @@
 -- ダッシュボード 1. サマリ：全国の主要指標（年）
--- フェーズ2では延べ宿泊者数のみ。消費単価・客室稼働率はフェーズ4で追加する
 
 with national as (
     select year, target, guest_nights
@@ -24,6 +23,30 @@ with_japanese as (
         *,
         total_guest_nights - foreign_guest_nights as japanese_guest_nights
     from pivoted
+),
+
+occupancy as (
+    select year, room_occupancy_rate
+    from {{ ref('stg_overnight__occupancy') }}
+    where area_type = 'national'
+        and month = 0
+        and employee_size = '総数'
+        and purpose = '計'
+        and facility_type = '全体'
+),
+
+consumption as (
+    select year, consumption_period_label, spend_per_trip, avg_nights
+    from {{ ref('int_nationality_yearly') }}
+    where nationality_code = 'ALL'
+        and consumption_period_label is not null
+),
+
+joined as (
+    select *
+    from with_japanese
+    left join occupancy using (year)
+    left join consumption using (year)
 )
 
 select
@@ -37,6 +60,11 @@ select
     safe_divide(total_guest_nights, lag(total_guest_nights) over (order by year)) - 1 as total_guest_nights_yoy,
     safe_divide(japanese_guest_nights, lag(japanese_guest_nights) over (order by year)) - 1 as japanese_guest_nights_yoy,
     safe_divide(foreign_guest_nights, lag(foreign_guest_nights) over (order by year)) - 1 as foreign_guest_nights_yoy,
+    room_occupancy_rate,
+    spend_per_trip,
+    safe_divide(spend_per_trip, lag(spend_per_trip) over (order by year)) - 1 as spend_per_trip_yoy,
+    avg_nights,
+    consumption_period_label,
     -- コロナの影響で調査の中止・急減がある期間。グラフで色を分けるのに使う
     year between 2020 and 2022 as is_covid_period
-from with_japanese
+from joined
