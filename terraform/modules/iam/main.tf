@@ -35,6 +35,12 @@ locals {
     { sa = "sa-github-dbt-ci", dataset = "raw", role = "roles/bigquery.dataViewer" },
   ]
 
+  # dbt docs のカタログ（列の型・行数）は、データセットごとの __TABLES__ を読むため、データの閲覧者が要る（書き込みはできない）
+  docs_dataset_roles = [
+    for dataset in ["raw", "ops", "staging", "intermediate", "marts"] :
+    { sa = "sa-github-docs", dataset = dataset, role = "roles/bigquery.dataViewer" }
+  ]
+
   # クエリを実行するサービスアカウント
   job_users = ["sa-ingest", "sa-dbt", "sa-workflows", "sa-looker", "sa-github-docs"]
 
@@ -50,8 +56,6 @@ locals {
     { sa = "sa-github-plan", role = "roles/iam.securityReviewer" },
     # ジョブの実行と ci_pr_{番号} の作成。作ったデータセットの所有者になるので、PR を閉じたときに消せる
     { sa = "sa-github-dbt-ci", role = "roles/bigquery.user" },
-    # dbt docs のカタログ（列の型・行数）を作る。テーブルのデータは読めない
-    { sa = "sa-github-docs", role = "roles/bigquery.metadataViewer" },
   ]
 
   # terraform apply で、このリポジトリが管理するリソースを作り変える（仕様書 10.1）。
@@ -93,7 +97,7 @@ resource "google_storage_bucket_iam_member" "this" {
 }
 
 resource "google_bigquery_dataset_iam_member" "this" {
-  for_each = { for r in local.dataset_roles : "${r.sa}/${r.dataset}/${r.role}" => r }
+  for_each = { for r in concat(local.dataset_roles, local.docs_dataset_roles) : "${r.sa}/${r.dataset}/${r.role}" => r }
 
   project    = var.project_id
   dataset_id = var.dataset_ids[each.value.dataset]

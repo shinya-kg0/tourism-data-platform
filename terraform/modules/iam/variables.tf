@@ -22,3 +22,8 @@ variable "tfstate_bucket" {
   description = "Terraform の状態ファイルを置くバケット（Terraform の管理外。仕様書 10.2）"
   type        = string
 }
+
+variable "github_oidc_subject_prefix" {
+  description = "GitHub Actions のトークンの sub の接頭辞（例：repo:{owner}@{owner の ID}/{repo}@{repo の ID}）。gh api repos/{owner}/{repo}/actions/oidc/customization/sub の sub_claim_prefix"
+  type        = string
+}
