@@ -180,8 +180,13 @@ gh secret set ALERT_EMAIL   # 値を入力する
 | Pages | Settings → Pages → Source を「GitHub Actions」 |
 | ブランチの保護（main） | PR を必須（承認の数は 0）、必須のチェック：`lint-test`・`terraform-plan`・`dbt-ci`、force push と削除を禁止、管理者にも当てはめる |
 
-`sa-github-deployer` は環境 `production` のジョブからしか使えない（トークンの sub が `repo:{owner/repo}:environment:production` のとき）。
+`sa-github-deployer` は環境 `production` のジョブからしか使えない（トークンの sub が `{接頭辞}:environment:production` のとき）。
 環境の名前を変えると、デプロイが認証で失敗する。
+
+- このリポジトリの sub は、名前の変更に左右されない形式（`repo:{owner}@{owner の ID}/{repo}@{repo の ID}`）になっている。
+  接頭辞は `gh api repos/shinya-kg0/tourism-data-platform/actions/oidc/customization/sub` の `sub_claim_prefix` で確かめられる。
+- Terraform には変数 `github_oidc_subject_prefix` で渡す。手元は `terraform.tfvars`、GitHub Actions は
+  `github.repository_owner_id`・`github.repository_id` から組み立てる。
 
 ### `ci_pr_*` が残ったとき
 

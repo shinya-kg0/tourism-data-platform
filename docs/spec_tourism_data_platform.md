@@ -506,7 +506,7 @@ Cloud Scheduler（毎日 04:00 JST）
 | `sa-looker` | Looker Studio（BIツール） | `marts` のデータ閲覧者、ジョブユーザー（今は未使用。D-15） |
 | `sa-github-builder` | GitHub Actions（mainへのマージの `build-push`） | `tourism` リポジトリ（Artifact Registry）への書き込みだけ（mainブランチだけに限定） |
 | `sa-github-deployer` | GitHub Actions（mainへのマージの `terraform-apply`） | Terraformが管理するサービスの管理者ロール（GitHubの本番環境 `production` のジョブだけに限定。環境はmainだけ・承認が必要） |
-| `sa-github-docs` | GitHub Actions（mainへのマージの `dbt-docs`） | BigQueryのメタデータの閲覧者（データは読めない）、ジョブユーザー（mainブランチだけに限定） |
+| `sa-github-docs` | GitHub Actions（mainへのマージの `dbt-docs`） | `raw`・`ops`・`staging`・`intermediate`・`marts` のデータ閲覧者、ジョブユーザー（書き込みはできない。mainブランチだけに限定）。dbt docs のカタログ（列の型・行数）を作るとき、dbt-bigquery がデータセットごとの `__TABLES__` を読み、これにはデータの閲覧者が要るため |
 | `sa-github-plan` | GitHub Actions（PRの `terraform-plan`） | プロジェクトの閲覧者、IAMポリシーの閲覧（`iam.securityReviewer`）、tfstateバケットのオブジェクト閲覧者。書き込みの権限は持たない |
 | `sa-github-dbt-ci` | GitHub Actions（PRの `dbt-ci`・`dbt-ci-cleanup`） | `raw` のデータ閲覧者、`bigquery.user`（ジョブの実行と `ci_pr_*` データセットの作成。作ったデータセットだけを消せる） |
 | （GCSのサービスエージェント） | Eventarcへのイベント送信 | **`pubsub.publisher`**（付け忘れるとイベントが届かない） |

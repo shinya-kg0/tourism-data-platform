@@ -25,3 +25,8 @@ variable "image_tag" {
   description = "ingest・dbt のコンテナイメージのタグ（コミットの SHA。scripts/build_push.sh で送ったもの）"
   type        = string
 }
+
+variable "github_oidc_subject_prefix" {
+  description = "GitHub Actions のトークンの sub の接頭辞（例：repo:{owner}@{owner の ID}/{repo}@{repo の ID}）。gh api repos/{owner}/{repo}/actions/oidc/customization/sub の sub_claim_prefix"
+  type        = string
+}

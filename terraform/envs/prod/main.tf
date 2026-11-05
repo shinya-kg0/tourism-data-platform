@@ -50,11 +50,12 @@ module "bigquery" {
 module "iam" {
   source = "../../modules/iam"
 
-  project_id        = var.project_id
-  bucket_names      = module.storage.bucket_names
-  dataset_ids       = module.bigquery.dataset_ids
-  github_repository = var.github_repository
-  tfstate_bucket    = "${var.project_id}-tfstate"
+  project_id                 = var.project_id
+  bucket_names               = module.storage.bucket_names
+  dataset_ids                = module.bigquery.dataset_ids
+  github_repository          = var.github_repository
+  github_oidc_subject_prefix = var.github_oidc_subject_prefix
+  tfstate_bucket             = "${var.project_id}-tfstate"
 
   depends_on = [google_project_service.this]
 }

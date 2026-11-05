@@ -1,4 +1,6 @@
 project_id        = "<project_id>"
 alert_email       = "<you@example.com>"
 github_repository = "<owner>/tourism-data-platform"
+# gh api repos/<owner>/tourism-data-platform/actions/oidc/customization/sub の sub_claim_prefix
+github_oidc_subject_prefix = "repo:<owner>@<owner の ID>/tourism-data-platform@<リポジトリの ID>"
 image_tag         = "<git の短い SHA>"  # scripts/build_push.sh が表示する
