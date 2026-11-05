@@ -1,10 +1,11 @@
 # CLAUDE.md
 
 観光統計（訪日外国人消費動向調査・宿泊旅行統計調査）の BigQuery データ基盤。学習・ポートフォリオ用。
+可視化はスコープ外（D-22）。marts を BI ツールから読める「つなぎ口」として整えるところまでが対象で、Looker Studio はページ 1 のみ作成済み。
 
 ## 最初に読むもの
 
-- 仕様書：`docs/spec_tourism_data_platform.md`（設計判断 D-01〜D-21 と根拠を含む）
+- 仕様書：`docs/spec_tourism_data_platform.md`（設計判断 D-01〜D-22 と根拠を含む）
 - 仕様と違う実装をするときは、先に仕様書を更新するか、ユーザーに確認する
 
 ## 構成と担当
@@ -29,7 +30,7 @@ cd terraform/envs/prod && terraform fmt -recursive ../.. && terraform validate
 
 - 秘密情報（`.env`、tfvars、サービスアカウントキー）はコミットしない。GitHub Actions はキーなし認証（D-18）
 - raw は追記せず「調査・年・期・公表区分」単位で入れ替える（D-05）
-- Looker Studio が参照するのは marts だけ（D-15）
+- BI ツール（Looker Studio など）が参照するのは marts だけ（D-15）。marts はページ単位のまま残し、BI ツールの都合で作り直さない（D-09）
 - ドキュメント・コメント・dbt の説明は日本語
 
 ## データの注意点
