@@ -504,7 +504,9 @@ Cloud Scheduler（毎日 04:00 JST）
 | `sa-eventarc` | Eventarcのトリガー | Workflowsの起動者、イベントの受信者 |
 | `sa-scheduler` | Cloud Scheduler | Workflowsの起動者 |
 | `sa-looker` | Looker Studio（BIツール） | `marts` のデータ閲覧者、ジョブユーザー（今は未使用。D-15） |
-| `sa-github-deployer` | GitHub Actions（mainへのマージ） | Terraformの適用とイメージの送信に必要な権限（GitHubのmainブランチと本番環境だけに限定） |
+| `sa-github-builder` | GitHub Actions（mainへのマージの `build-push`） | `tourism` リポジトリ（Artifact Registry）への書き込みだけ（mainブランチだけに限定） |
+| `sa-github-deployer` | GitHub Actions（mainへのマージの `terraform-apply`） | Terraformが管理するサービスの管理者ロール（GitHubの本番環境 `production` のジョブだけに限定。環境はmainだけ・承認が必要） |
+| `sa-github-docs` | GitHub Actions（mainへのマージの `dbt-docs`） | BigQueryのメタデータの閲覧者（データは読めない）、ジョブユーザー（mainブランチだけに限定） |
 | `sa-github-plan` | GitHub Actions（PRの `terraform-plan`） | プロジェクトの閲覧者、IAMポリシーの閲覧（`iam.securityReviewer`）、tfstateバケットのオブジェクト閲覧者。書き込みの権限は持たない |
 | `sa-github-dbt-ci` | GitHub Actions（PRの `dbt-ci`・`dbt-ci-cleanup`） | `raw` のデータ閲覧者、`bigquery.user`（ジョブの実行と `ci_pr_*` データセットの作成。作ったデータセットだけを消せる） |
 | （GCSのサービスエージェント） | Eventarcへのイベント送信 | **`pubsub.publisher`**（付け忘れるとイベントが届かない） |
@@ -516,6 +518,8 @@ Cloud Scheduler（毎日 04:00 JST）
 > サービスアカウントのキー（JSON）をGitHubのシークレットに置くと、漏れたときの被害が大きく、定期的な更新も必要になる。Workload Identity連携ならキーが存在しない。さらに、認証できるのは特定のリポジトリとブランチだけに限定できる。
 >
 > PRで動くCIは、レビューの前のコードを実行する。そのため、PRからは `sa-github-deployer` を使えないようにし、読み取りが中心の `sa-github-plan`・`sa-github-dbt-ci` を使う。plan用はIAMを読めるがデータは読めず、dbt-ci用はrawを読めるがIAMや本番のstaging・intermediate・martsには触れない、というように、必要な権限が違うので分ける（D-17）。
+>
+> mainへのマージでも、イメージを送る（builder）・本番を変える（deployer）・dbt docsを作る（docs）を分ける。`sa-github-deployer` はIAMを管理するため `projectIamAdmin` を持ち、自分に権限を足すこともできてしまう。そこで、使えるのを「mainだけをデプロイできる環境 `production` の、承認を経たジョブ」に絞り、イメージの送信やdocsの作成のような、承認の要らない処理には使わせない。
 
 > **D-19：取り込み処理ではe-Stat APIを使わない**
 > 取り込みの対象はアップロードされたExcelだけで、APIキーは必要ない。そのためSecret Managerも使わない。APIは、手元のノートブックで探したり検証したりするときにだけ使う。
@@ -530,9 +534,10 @@ Cloud Scheduler（毎日 04:00 JST）
 | PR | `terraform-plan` | `fmt` → `validate` → `plan`。plan の結果をPRにコメントする |
 | PR | `dbt-ci` | `ci_pr_{番号}` データセットに対して `dbt build` を実行する（rawは本番のものを読むだけ） |
 | PRを閉じたとき | `dbt-ci-cleanup` | `ci_pr_{番号}` データセットを消す |
-| mainへのマージ | `build-push` | ingest用・dbt用のコンテナイメージを作り、コミットのSHAをタグにしてArtifact Registryへ送る |
+| mainへのマージ | `build-push` | ingest用・dbt用のコンテナイメージを作り、コミットのSHAをタグにしてArtifact Registryへ送る（マージのたびに作り、「タグ＝デプロイしたコミット」を保つ） |
+| mainへのマージ | `terraform-plan` | 承認の前に plan を実行し、何が変わるかをジョブのまとめに出す（`sa-github-plan`） |
 | mainへのマージ | `terraform-apply` | GitHubの本番環境の承認を経てから apply する（新しいイメージのタグを渡す） |
-| mainへのマージ | `dbt-docs` | dbt docsを作り、GitHub Pagesに公開する |
+| mainへのマージ | `dbt-docs` | 本番をtargetにdbt docsを作り、GitHub Pagesに公開する（デプロイと並行して動く） |
 
 - 認証：GCPを使うジョブ（`terraform-plan`・`dbt-ci`・`dbt-ci-cleanup`）は、Workload Identity連携でCI用のサービスアカウントになる（D-18）。プロバイダは、このリポジトリから来たトークンだけを受け付ける。
 - フォークからのPR：GitHubの仕様で認証のトークンを受け取れないため、GCPを使うジョブは動かさない（`lint-test` だけが動く）。
@@ -549,7 +554,7 @@ Cloud Scheduler（毎日 04:00 JST）
 | 監視の対象 | 方法 | 通知 |
 |---|---|---|
 | ingest の rejected / failed | ログに基づく指標 → アラート | メール |
-| transform の失敗（dbtテストの不合格を含む） | Workflowsの実行失敗 → アラート | メール |
+| transform・ingest の失敗（dbtテストの不合格、ingestのやり直しの失敗・ジョブを起動できない場合を含む） | Workflowsの実行失敗 → アラート | メール |
 | 費用 | 予算アラート（手作業で設定。10.2） | メール |
 
 ---

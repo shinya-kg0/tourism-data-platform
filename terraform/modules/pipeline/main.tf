@@ -186,3 +186,12 @@ resource "google_cloud_scheduler_job" "transform" {
     }
   }
 }
+
+# GitHub Actions の build-push がイメージを送る。書き込めるのはこのリポジトリだけ
+resource "google_artifact_registry_repository_iam_member" "github_builder" {
+  project    = var.project_id
+  location   = var.region
+  repository = google_artifact_registry_repository.this.name
+  role       = "roles/artifactregistry.writer"
+  member     = "serviceAccount:${var.service_account_emails["sa-github-builder"]}"
+}

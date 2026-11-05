@@ -27,13 +27,29 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 }
 
 # PR の CI で使うサービスアカウント。PR のブランチからも使うため、リポジトリ単位で許可する。
-# 本番を変える deployer は、main と本番環境だけに絞る（CI/CD の 2 つ目の PR で追加する）
 resource "google_service_account_iam_member" "github_ci" {
   for_each = toset(["sa-github-plan", "sa-github-dbt-ci"])
 
   service_account_id = google_service_account.this[each.value].name
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_repository}"
+}
+
+# main へのマージで動くジョブ（イメージの送信、dbt docs）。main ブランチからのトークンだけを許可する
+resource "google_service_account_iam_member" "github_main" {
+  for_each = toset(["sa-github-builder", "sa-github-docs"])
+
+  service_account_id = google_service_account.this[each.value].name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.ref/refs/heads/main"
+}
+
+# 本番を変える deployer は、環境 production のジョブだけに許可する。
+# 環境のジョブはトークンの sub が「repo:{owner/repo}:environment:{環境}」になる。環境は main だけ・承認が必要（GitHub 側の設定）
+resource "google_service_account_iam_member" "github_deployer" {
+  service_account_id = google_service_account.this["sa-github-deployer"].name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/subject/repo:${var.github_repository}:environment:production"
 }
 
 # plan で状態ファイルを読む（-lock=false で実行するので、書き込みは要らない）

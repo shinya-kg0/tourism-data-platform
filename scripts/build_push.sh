@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ingest・dbt のコンテナイメージを作り、Artifact Registry に送る（仕様書 12 章）
-# GitHub Actions の build-push（フェーズ5）ができるまでの、手元からのデプロイ用。
+# ふだんは main へのマージで GitHub Actions の build-push が行う。これは GitHub Actions が使えないときの、手元からのデプロイ用。
 #
 #   GCP_PROJECT_ID=tourism-data-platform scripts/build_push.sh
 #

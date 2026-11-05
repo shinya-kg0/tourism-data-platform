@@ -1,0 +1,181 @@
+# main へのマージで動くデプロイと dbt docs の公開（仕様書 12 章）
+# ジョブごとにサービスアカウントを分ける（D-17）。どれもキーなしで認証する（D-18）
+#   build-push      sa-github-builder   main だけ
+#   terraform-plan  sa-github-plan      承認の前に、何が変わるかをジョブのまとめに出す
+#   terraform-apply sa-github-deployer  環境 production（main だけ・承認が必要）のジョブだけ
+#   dbt-docs        sa-github-docs      main だけ
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# デプロイは同時に 1 つだけ。途中で止めると tfstate のロックが残るので、止めずに順番に待たせる
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GCP_REGION: asia-northeast1
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      # タグはコミットの短い SHA（scripts/build_push.sh と同じ 12 桁）。マージのたびに作り、タグ＝デプロイしたコミットにする
+      - id: tag
+        run: echo "image_tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: sa-github-builder@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+      - uses: docker/setup-buildx-action@v3
+      # Cloud Run は linux/amd64 のイメージだけを動かせる
+      - name: ingest
+        uses: docker/build-push-action@v6
+        with:
+          context: ingest
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/tourism/ingest:${{ steps.tag.outputs.image_tag }}
+          cache-from: type=gha,scope=ingest
+          cache-to: type=gha,scope=ingest,mode=max
+      - name: dbt
+        uses: docker/build-push-action@v6
+        with:
+          context: dbt
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/tourism/dbt:${{ steps.tag.outputs.image_tag }}
+          cache-from: type=gha,scope=dbt
+          cache-to: type=gha,scope=dbt,mode=max
+
+  # 承認する人が、何が変わるかを見てから承認できるようにする（plan のファイルは機密を含むので、次のジョブに渡さない）
+  terraform-plan:
+    needs: build-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: terraform/envs/prod
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+      TF_VAR_github_repository: ${{ github.repository }}
+      TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+      TF_VAR_image_tag: ${{ needs.build-push.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: sa-github-plan@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.5
+          terraform_wrapper: false
+      - run: terraform init -input=false -backend-config="bucket=${GCP_PROJECT_ID}-tfstate" -backend-config="prefix=envs/prod"
+      - name: plan
+        run: |
+          set -o pipefail
+          terraform plan -lock=false -input=false -no-color 2>&1 | tee plan.txt
+          {
+            echo "### terraform plan（image_tag = ${TF_VAR_image_tag}）"
+            echo
+            echo "**$(grep -E '^(Plan: |No changes\.)' plan.txt | head -1)**"
+            echo
+            echo '```'
+            grep -vE ': (Refreshing state|Reading|Read complete)' plan.txt | head -c 60000
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  terraform-apply:
+    needs: [build-push, terraform-plan]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: terraform/envs/prod
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+      TF_VAR_github_repository: ${{ github.repository }}
+      TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+      TF_VAR_image_tag: ${{ needs.build-push.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: sa-github-deployer@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.5
+          terraform_wrapper: false
+      - run: terraform init -input=false -backend-config="bucket=${GCP_PROJECT_ID}-tfstate" -backend-config="prefix=envs/prod"
+      - run: terraform plan -input=false -no-color -out=tfplan
+      - run: terraform apply -input=false -no-color tfplan
+
+  # 本番のテーブルの定義（列の型・行数）を読んで dbt docs を作る。データは読まない
+  dbt-docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: dbt
+    env:
+      DBT_PROFILES_DIR: .
+      DBT_USER: docs  # profiles.yml の dev ターゲットが参照する。prod ターゲットでは使わない
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: sa-github-docs@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run dbt deps
+      - run: uv run dbt docs generate --target prod
+      - name: 公開するファイルをまとめる
+        run: |
+          mkdir -p ../site
+          cp target/index.html target/manifest.json target/catalog.json ../site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  pages:
+    needs: dbt-docs
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

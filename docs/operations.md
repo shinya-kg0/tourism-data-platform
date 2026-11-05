@@ -11,7 +11,20 @@ Cloud Scheduler「transform-daily」（毎日 04:00 JST）→ Workflows「transf
 
 ## 1. デプロイ
 
-GitHub Actions の build-push / terraform-apply（フェーズ5）ができるまでは、手元から行う。
+ふだんは main へのマージで `.github/workflows/deploy.yml` が動く（仕様書 12 章）。
+
+1. `build-push`：ingest・dbt のイメージを作り、コミットの短い SHA（12 桁）をタグにして送る
+2. `terraform-plan`：新しいタグで plan し、結果をジョブのまとめ（Summary）に出す
+3. `terraform-apply`：環境 `production` の**承認待ち**になる。Actions の実行の画面で plan のまとめを見てから
+   「Review deployments」→ 承認すると、apply される
+4. `dbt-docs` → `pages`：本番を target に dbt docs を作り、GitHub Pages
+   （https://shinya-kg0.github.io/tourism-data-platform/）に公開する。デプロイとは並行して動く
+
+デプロイだけをやり直すときは、Actions の「Deploy」→「Run workflow」（main）。
+
+### 手元からデプロイする（GitHub Actions が使えないとき・最初の 1 回）
+
+GitHub Actions の認証（Workload Identity 連携とサービスアカウント）を変えるときや、新しい環境を作るときは、手元から行う。
 
 ```bash
 # 1) コンテナイメージを作り、Artifact Registry に送る（表示された image_tag を控える）
@@ -131,7 +144,7 @@ DBT_RAW_DATASET=dbt_${DBT_USER}_raw uv run dbt build
 
 rejected と failed をメールで知らせる仕組み（仕様書 13 章）は、フェーズ5で追加する。
 
-## 6. PR の CI（GitHub Actions）
+## 6. GitHub Actions（PR の CI とデプロイの設定）
 
 `.github/workflows/ci.yml`（仕様書 12 章）。PR を開く・更新すると次が動く。
 
@@ -158,6 +171,17 @@ gh variable set GCP_PROJECT_ID --body tourism-data-platform
 gh variable set GCP_WORKLOAD_IDENTITY_PROVIDER --body "$(cd terraform/envs/prod && terraform output -raw github_workload_identity_provider)"
 gh secret set ALERT_EMAIL   # 値を入力する
 ```
+
+### GitHub 側の設定（デプロイ）
+
+| 設定 | 内容 |
+|---|---|
+| 環境 `production` | 承認者：リポジトリのオーナー。デプロイできるブランチ：main だけ |
+| Pages | Settings → Pages → Source を「GitHub Actions」 |
+| ブランチの保護（main） | PR を必須（承認の数は 0）、必須のチェック：`lint-test`・`terraform-plan`・`dbt-ci`、force push と削除を禁止、管理者にも当てはめる |
+
+`sa-github-deployer` は環境 `production` のジョブからしか使えない（トークンの sub が `repo:{owner/repo}:environment:production` のとき）。
+環境の名前を変えると、デプロイが認証で失敗する。
 
 ### `ci_pr_*` が残ったとき
 
