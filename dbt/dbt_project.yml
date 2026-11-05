@@ -25,3 +25,7 @@ models:
 seeds:
   tourism:
     +schema: staging
+
+vars:
+  # 消費単価の回答数がこれより少ない県・国籍は、値がぶれやすいとして印を付ける（仕様書 17 章）
+  min_respondents: 30
