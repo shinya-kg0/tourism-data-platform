@@ -4,14 +4,17 @@
 
 locals {
   service_accounts = {
-    "sa-ingest"        = "取り込み処理（Cloud Run Job「ingest」）"
-    "sa-dbt"           = "dbt（Cloud Run Job「dbt」）"
-    "sa-workflows"     = "Workflows（ingest / transform）"
-    "sa-eventarc"      = "Eventarc のトリガー"
-    "sa-scheduler"     = "Cloud Scheduler"
-    "sa-looker"        = "Looker Studio のデータ読み取り（marts のみ）"
-    "sa-github-plan"   = "GitHub Actions：PR の terraform plan（読み取りのみ）"
-    "sa-github-dbt-ci" = "GitHub Actions：PR の dbt build（ci_pr_{番号} に書き出す）"
+    "sa-ingest"          = "取り込み処理（Cloud Run Job「ingest」）"
+    "sa-dbt"             = "dbt（Cloud Run Job「dbt」）"
+    "sa-workflows"       = "Workflows（ingest / transform）"
+    "sa-eventarc"        = "Eventarc のトリガー"
+    "sa-scheduler"       = "Cloud Scheduler"
+    "sa-looker"          = "Looker Studio のデータ読み取り（marts のみ）"
+    "sa-github-plan"     = "GitHub Actions：PR の terraform plan（読み取りのみ）"
+    "sa-github-dbt-ci"   = "GitHub Actions：PR の dbt build（ci_pr_{番号} に書き出す）"
+    "sa-github-builder"  = "GitHub Actions：main へのマージでコンテナイメージを送る"
+    "sa-github-deployer" = "GitHub Actions：main へのマージで terraform apply（環境 production のみ）"
+    "sa-github-docs"     = "GitHub Actions：main へのマージで dbt docs を作る（メタデータのみ）"
   }
 
   bucket_roles = [
@@ -33,7 +36,7 @@ locals {
   ]
 
   # クエリを実行するサービスアカウント
-  job_users = ["sa-ingest", "sa-dbt", "sa-workflows", "sa-looker"]
+  job_users = ["sa-ingest", "sa-dbt", "sa-workflows", "sa-looker", "sa-github-docs"]
 
   # 処理の起動に関わる、プロジェクト単位の権限
   project_roles = [
@@ -47,6 +50,28 @@ locals {
     { sa = "sa-github-plan", role = "roles/iam.securityReviewer" },
     # ジョブの実行と ci_pr_{番号} の作成。作ったデータセットの所有者になるので、PR を閉じたときに消せる
     { sa = "sa-github-dbt-ci", role = "roles/bigquery.user" },
+    # dbt docs のカタログ（列の型・行数）を作る。テーブルのデータは読めない
+    { sa = "sa-github-docs", role = "roles/bigquery.metadataViewer" },
+  ]
+
+  # terraform apply で、このリポジトリが管理するリソースを作り変える（仕様書 10.1）。
+  # IAM を管理するため projectIamAdmin は外せない。使えるのは環境 production の承認を経たジョブだけにする（github.tf）
+  deployer_roles = [
+    "roles/artifactregistry.admin",
+    "roles/bigquery.admin",
+    "roles/cloudscheduler.admin",
+    "roles/eventarc.admin",
+    "roles/iam.roleAdmin",
+    "roles/iam.serviceAccountAdmin",
+    "roles/iam.serviceAccountUser",
+    "roles/iam.workloadIdentityPoolAdmin",
+    "roles/logging.configWriter",
+    "roles/monitoring.editor",
+    "roles/resourcemanager.projectIamAdmin",
+    "roles/run.admin",
+    "roles/serviceusage.serviceUsageAdmin",
+    "roles/storage.admin",
+    "roles/workflows.admin",
   ]
 }
 
@@ -82,6 +107,14 @@ resource "google_project_iam_member" "bigquery_job_user" {
   project = var.project_id
   role    = "roles/bigquery.jobUser"
   member  = google_service_account.this[each.value].member
+}
+
+resource "google_project_iam_member" "deployer" {
+  for_each = toset(local.deployer_roles)
+
+  project = var.project_id
+  role    = each.value
+  member  = google_service_account.this["sa-github-deployer"].member
 }
 
 resource "google_project_iam_member" "this" {

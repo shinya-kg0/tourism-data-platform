@@ -11,6 +11,7 @@ locals {
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
     "logging.googleapis.com",
+    "monitoring.googleapis.com",
     "pubsub.googleapis.com",
     "run.googleapis.com",
     "serviceusage.googleapis.com",
@@ -70,4 +71,15 @@ module "pipeline" {
 
   # Eventarc のトリガーより先に、GCS のサービスエージェントの権限を付けておく
   depends_on = [google_project_service.this, module.iam]
+}
+
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  project_id     = var.project_id
+  alert_email    = var.alert_email
+  job_names      = module.pipeline.job_names
+  workflow_names = module.pipeline.workflow_names
+
+  depends_on = [google_project_service.this]
 }
