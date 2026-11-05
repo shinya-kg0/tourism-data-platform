@@ -504,7 +504,9 @@ Cloud Scheduler（毎日 04:00 JST）
 | `sa-eventarc` | Eventarcのトリガー | Workflowsの起動者、イベントの受信者 |
 | `sa-scheduler` | Cloud Scheduler | Workflowsの起動者 |
 | `sa-looker` | Looker Studio（BIツール） | `marts` のデータ閲覧者、ジョブユーザー（今は未使用。D-15） |
-| `sa-github-deployer` | GitHub Actions | Terraformの適用とイメージの送信に必要な権限（GitHubのmainブランチと本番環境だけに限定） |
+| `sa-github-deployer` | GitHub Actions（mainへのマージ） | Terraformの適用とイメージの送信に必要な権限（GitHubのmainブランチと本番環境だけに限定） |
+| `sa-github-plan` | GitHub Actions（PRの `terraform-plan`） | プロジェクトの閲覧者、IAMポリシーの閲覧（`iam.securityReviewer`）、tfstateバケットのオブジェクト閲覧者。書き込みの権限は持たない |
+| `sa-github-dbt-ci` | GitHub Actions（PRの `dbt-ci`・`dbt-ci-cleanup`） | `raw` のデータ閲覧者、`bigquery.user`（ジョブの実行と `ci_pr_*` データセットの作成。作ったデータセットだけを消せる） |
 | （GCSのサービスエージェント） | Eventarcへのイベント送信 | **`pubsub.publisher`**（付け忘れるとイベントが届かない） |
 
 > **D-17：処理ごとにサービスアカウントを分け、権限を最小限にする**
@@ -512,6 +514,8 @@ Cloud Scheduler（毎日 04:00 JST）
 
 > **D-18：GitHub Actionsはキーを使わずに認証する（Workload Identity連携）**
 > サービスアカウントのキー（JSON）をGitHubのシークレットに置くと、漏れたときの被害が大きく、定期的な更新も必要になる。Workload Identity連携ならキーが存在しない。さらに、認証できるのは特定のリポジトリとブランチだけに限定できる。
+>
+> PRで動くCIは、レビューの前のコードを実行する。そのため、PRからは `sa-github-deployer` を使えないようにし、読み取りが中心の `sa-github-plan`・`sa-github-dbt-ci` を使う。plan用はIAMを読めるがデータは読めず、dbt-ci用はrawを読めるがIAMや本番のstaging・intermediate・martsには触れない、というように、必要な権限が違うので分ける（D-17）。
 
 > **D-19：取り込み処理ではe-Stat APIを使わない**
 > 取り込みの対象はアップロードされたExcelだけで、APIキーは必要ない。そのためSecret Managerも使わない。APIは、手元のノートブックで探したり検証したりするときにだけ使う。
@@ -529,6 +533,11 @@ Cloud Scheduler（毎日 04:00 JST）
 | mainへのマージ | `build-push` | ingest用・dbt用のコンテナイメージを作り、コミットのSHAをタグにしてArtifact Registryへ送る |
 | mainへのマージ | `terraform-apply` | GitHubの本番環境の承認を経てから apply する（新しいイメージのタグを渡す） |
 | mainへのマージ | `dbt-docs` | dbt docsを作り、GitHub Pagesに公開する |
+
+- 認証：GCPを使うジョブ（`terraform-plan`・`dbt-ci`・`dbt-ci-cleanup`）は、Workload Identity連携でCI用のサービスアカウントになる（D-18）。プロバイダは、このリポジトリから来たトークンだけを受け付ける。
+- フォークからのPR：GitHubの仕様で認証のトークンを受け取れないため、GCPを使うジョブは動かさない（`lint-test` だけが動く）。
+- `terraform-plan` は tfstate をロックしない（`-lock=false`）。`image_tag` には、本番のCloud Run Jobが今使っているタグを渡し、イメージの差分が出ないようにする。plan の結果は、PRのコメントを1つだけ作り、毎回書き換える。
+- GitHub側で手作業でする設定（リポジトリの変数・シークレット）は `docs/operations.md` に書く。
 
 > **D-20：dbtのCIは、本番のrawを読み、PR専用のデータセットに書き出す**
 > 見本データだけでテストすると、本物のデータでしか起きない問題を見逃す。rawは読むだけにすれば本番に影響はない。PRごとにデータセットを分けるので、複数のPRが同時に動いてもぶつからない。
