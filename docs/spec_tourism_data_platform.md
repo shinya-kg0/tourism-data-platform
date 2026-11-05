@@ -535,6 +535,7 @@ Cloud Scheduler（毎日 04:00 JST）
 | PR | `dbt-ci` | `ci_pr_{番号}` データセットに対して `dbt build` を実行する（rawは本番のものを読むだけ） |
 | PRを閉じたとき | `dbt-ci-cleanup` | `ci_pr_{番号}` データセットを消す |
 | mainへのマージ | `build-push` | ingest用・dbt用のコンテナイメージを作り、コミットのSHAをタグにしてArtifact Registryへ送る（マージのたびに作り、「タグ＝デプロイしたコミット」を保つ） |
+| mainへのマージ | `terraform-plan` | 承認の前に plan を実行し、何が変わるかをジョブのまとめに出す（`sa-github-plan`） |
 | mainへのマージ | `terraform-apply` | GitHubの本番環境の承認を経てから apply する（新しいイメージのタグを渡す） |
 | mainへのマージ | `dbt-docs` | 本番をtargetにdbt docsを作り、GitHub Pagesに公開する（デプロイと並行して動く） |
 
