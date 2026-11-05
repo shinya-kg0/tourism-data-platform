@@ -84,7 +84,7 @@ def test_read_rows_old_format_footnote_marker():
         [None, "１）", "個人旅行向けパッケージ商品", None, 1, 2],
         [None, None, "往復航空（船舶）運賃", None, 1, 2],
         [None, "日本滞在中の", "宿泊料金", None, 1, 2],
-        [None, "費目別支出", "飲食費", None, 1, 2],
+        [None, "費目別支出", "飲食費 ２）", None, 1, 2],
         [None, None, None, None, "１）回答者１人当たりの支出額を円に換算", None],
     ])  # fmt: skip
     rows = read_rows(df, 0, len(df), [4, 5])
@@ -94,7 +94,7 @@ def test_read_rows_old_format_footnote_marker():
         ("旅行前支出", "往復航空（船舶）運賃"),
         ("日本滞在中の費目別支出", "宿泊料金"),
         ("日本滞在中の費目別支出", "飲食費"),
-    ]  # 注記の行は読まない
+    ]  # 注記の行は読まず、項目の後ろの注記の番号は除く
 
 
 @pytest.fixture

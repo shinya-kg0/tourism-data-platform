@@ -36,6 +36,8 @@ FLAG_RE = re.compile(r"^([*＊]|-|－|…|x|X)$")
 CATEGORY_NOISE_RE = re.compile(r"【[^】]*】|（(?:単一|複数)回答）|^[0-9０-９]+[)）]$|\s+")
 # 大分類の最後の行（この行で大分類の文字が終わる）
 CATEGORY_END_RE = re.compile(r"(】|回答）)$")
+# 項目の後ろの注記の番号（2017 年以前の「北陸信越運輸局 ２）」など）
+ITEM_FOOTNOTE_RE = re.compile(r"\s+[0-9０-９]+[)）]$")
 QUARTER_RE = re.compile(r"(\d{1,2})-\d{1,2}月期")
 RELEASE_LABELS = {"1次速報": "preliminary1", "2次速報": "preliminary2"}
 
@@ -135,6 +137,7 @@ def read_rows(df: pd.DataFrame, start: int, stop: int, value_cols: list[int]) ->
     parent = ""
     for i in range(start, stop):
         line, item, sub = (clean_text(df.iat[i, c]) for c in (1, 2, 3))
+        item, sub = ITEM_FOOTNOTE_RE.sub("", item), ITEM_FOOTNOTE_RE.sub("", sub)
         # 値のない行（空行・注記）と、見出しのない行（2017 年は注記が値の列にある）は読まない
         if not (line or item or sub) or df.iloc[i, value_cols].isna().all():
             continue
