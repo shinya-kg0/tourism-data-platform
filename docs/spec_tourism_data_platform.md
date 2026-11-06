@@ -45,37 +45,94 @@
 
 ## 2. 全体のアーキテクチャ
 
-```
-                   ┌───────────────── GCP プロジェクト（asia-northeast1）─────────────────┐
-                   │                                                                    │
- 人がアップロード ──▶ GCS: landing バケット                                              │
-                   │     │ ファイル作成のイベント（object.finalized）                      │
-                   │     ▼                                                              │
-                   │  Eventarc ──▶ Workflows「ingest」                                  │
-                   │                  │                                                 │
-                   │                  ▼                                                 │
-                   │            Cloud Run Job「ingest」(Python)                          │
-                   │              ・パスの検証 → Excelの構造検査 → 縦持ちに変換          │
-                   │              ・BigQuery raw層の該当範囲を入れ替え                   │
-                   │              ・成功：archive バケットへ移動 / 不正：rejected へ移動 │
-                   │              ・ops.ingestion_log に記録                             │
-                   │                                                                    │
-                   │  Cloud Scheduler（毎日 04:00 JST）──▶ Workflows「transform」        │
-                   │                  │ 前回のdbt実行以降に取り込みがあった場合だけ      │
-                   │                  ▼                                                 │
-                   │            Cloud Run Job「dbt」(dbt build)                          │
-                   │              raw → staging → intermediate → marts（テストが関所）  │
-                   │                                                                    │
-                   │  BigQuery: raw / ops / staging / intermediate / marts              │
-                   │                                  │                                 │
-                   └──────────────────────────────────┼─────────────────────────────────┘
-                                                      ┆ 点線：未実装（D-22）
-                                                      ▼
-                                 BI ツール（任意：Looker Studio / Tableau など。marts だけを参照）
-                                 ※ Looker Studio はページ1のみ、動作確認として作成済み
+GCPのリソースはすべて1つのプロジェクト（asia-northeast1）に置く（D-13）。
 
- GitHub ── Actions（Workload Identity 連携）──▶ Terraform apply / イメージ作成 / dbt CI / dbt docs 公開
+### 2.1 データの流れ
+
+```mermaid
+flowchart LR
+    user(["人"]) -->|"Excel をアップロード"| landing[("GCS<br>landing")]
+
+    subgraph ingestFlow["取り込み（イベント駆動）"]
+        eventarc["Eventarc<br>ingest-on-upload"] --> wfIngest["Workflows<br>ingest"]
+        wfIngest -->|"失敗したら最大 3 回やり直す"| jobIngest["Cloud Run Job<br>ingest（Python）"]
+    end
+
+    subgraph transformFlow["変換（毎日 04:00 JST）"]
+        scheduler["Cloud Scheduler<br>transform-daily"] --> wfTransform["Workflows<br>transform"]
+        wfTransform -->|"新しい取り込みがあるときだけ"| jobDbt["Cloud Run Job<br>dbt（dbt build）"]
+    end
+
+    subgraph bq["BigQuery"]
+        raw[("raw")] --> staging[("staging")] --> intermediate[("intermediate")] --> marts[("marts")]
+        ops[("ops<br>取り込みと dbt の記録")]
+    end
+
+    landing -->|"object.finalized"| eventarc
+    jobIngest -->|"構造を検査し、範囲ごとに入れ替える"| raw
+    jobIngest -->|"成功"| archive[("GCS<br>archive")]
+    jobIngest -->|"ルール・構造に合わない"| rejected[("GCS<br>rejected")]
+    jobIngest --> ops
+    wfTransform -->|"取り込みの記録を確かめる"| ops
+    jobDbt -->|"テストに通ったときだけ marts を更新"| staging
+
+    marts -.->|"marts だけを読む（D-15）<br>可視化はスコープ外（D-22）"| bi["BI ツール<br>Looker Studio は<br>ページ 1 のみ作成済み"]
+
+    jobIngest -.->|"rejected / failed のログ"| monitoring["Cloud Monitoring"]
+    wfIngest -.->|"実行の失敗"| monitoring
+    wfTransform -.->|"実行の失敗"| monitoring
+    monitoring -->|"アラート"| mail(["メール"])
 ```
+
+- 取り込み：landingへのアップロードをきっかけに、Cloud Run Job「ingest」がパスの検証 → Excelの構造の検査 → 縦持ちへの変換をし、raw層の該当する範囲を入れ替える（5章）。成功したファイルはarchiveへ、不正なファイルはrejectedへ移し、結果を `ops.ingestion_log` に記録する。
+- 変換：毎日04:00に、前回のdbtの実行のあとに取り込みがあったときだけ `dbt build` を実行する（D-12）。テストに落ちると、その先のmartsは更新されない。
+- BIツール：martsだけを参照する（D-15）。可視化はスコープ外で（D-22）、Looker Studioはページ1だけを動作確認として作った。
+- 監視：取り込みのrejected / failedと、Workflowsの失敗をメールで通知する（13章）。
+
+### 2.2 CI/CDと認証
+
+```mermaid
+flowchart LR
+    subgraph github["GitHub Actions"]
+        direction TB
+        subgraph prFlow["PR"]
+            lint["lint-test<br>ruff・pytest"]
+            prPlan["terraform-plan<br>sa-github-plan"]
+            dbtCi["dbt-ci<br>sa-github-dbt-ci"]
+        end
+        subgraph mainFlow["main へのマージ"]
+            build["build-push<br>sa-github-builder"] --> mainPlan["terraform-plan<br>sa-github-plan"]
+            mainPlan --> approval{"環境 production<br>の承認"}
+            approval --> apply["terraform-apply<br>sa-github-deployer"]
+            docs["dbt-docs<br>sa-github-docs"]
+        end
+    end
+
+    wif["Workload Identity 連携<br>このリポジトリのトークンだけ<br>キーなし（D-18）"]
+
+    prPlan --> wif
+    dbtCi --> wif
+    build --> wif
+    mainPlan --> wif
+    apply --> wif
+    docs --> wif
+
+    subgraph gcp["GCP"]
+        ar[("Artifact Registry")]
+        tf["Terraform が管理するリソース<br>Cloud Run Jobs・Workflows・IAM ほか"]
+        ciDataset[("BigQuery<br>ci_pr_番号")]
+        prod[("BigQuery<br>本番のデータセット")]
+    end
+
+    wif -->|"イメージを送る"| ar
+    wif -->|"plan は読むだけ / apply で変更"| tf
+    wif -->|"raw を読み、PR 専用に書き出す"| ciDataset
+    wif -->|"テーブルの定義を読む"| prod
+    docs --> pages["GitHub Pages<br>dbt docs"]
+```
+
+- GitHub ActionsからGCPへは、Workload Identity連携でキーを使わずに認証する（D-18）。ジョブごとにサービスアカウントを分ける（11章）。
+- mainへのマージでは、イメージを作り、承認の前にplanを出し、GitHubの本番環境 `production` の承認を経てからapplyする。dbt docsはGitHub Pagesに公開する（12章）。
 
 ---
 
@@ -539,7 +596,7 @@ Cloud Scheduler（毎日 04:00 JST）
 | mainへのマージ | `terraform-apply` | GitHubの本番環境の承認を経てから apply する（新しいイメージのタグを渡す） |
 | mainへのマージ | `dbt-docs` | 本番をtargetにdbt docsを作り、GitHub Pagesに公開する（デプロイと並行して動く） |
 
-- 認証：GCPを使うジョブ（`terraform-plan`・`dbt-ci`・`dbt-ci-cleanup`）は、Workload Identity連携でCI用のサービスアカウントになる（D-18）。プロバイダは、このリポジトリから来たトークンだけを受け付ける。
+- 認証：GCPを使うジョブは、Workload Identity連携でジョブごとのサービスアカウントになる（D-18。11章）。プロバイダは、このリポジトリから来たトークンだけを受け付ける。PRのジョブは読み取りが中心の `sa-github-plan`・`sa-github-dbt-ci`、mainへのマージのジョブは `sa-github-builder`・`sa-github-plan`・`sa-github-deployer`・`sa-github-docs` を使う。
 - フォークからのPR：GitHubの仕様で認証のトークンを受け取れないため、GCPを使うジョブは動かさない（`lint-test` だけが動く）。
 - `terraform-plan` は tfstate をロックしない（`-lock=false`）。`image_tag` には、本番のCloud Run Jobが今使っているタグを渡し、イメージの差分が出ないようにする。plan の結果は、PRのコメントを1つだけ作り、毎回書き換える。
 - GitHub側で手作業でする設定（リポジトリの変数・シークレット）は `docs/operations.md` に書く。
@@ -600,27 +657,27 @@ Cloud Scheduler（毎日 04:00 JST）
 │   ├── modules/                # storage / bigquery / pipeline / iam / monitoring
 │   └── envs/prod/
 ├── notebooks/                  # 今あるノートブック（探索・検証用）
-├── docs/                       # 仕様書、作業レポート、looker_studio.md
-├── scripts/                    # 見出し定義の作成、初回の一括アップロード
+├── docs/                       # 仕様書、運用手順、作業レポート、looker_studio.md
+├── scripts/                    # 見出し定義の作成、手元からのイメージの作成（build_push.sh）
 └── .github/workflows/
 ```
 
 - `.env`、`data/`、`*.tfstate` はGitで管理しない。
-- 今あるスクリプトとレポートは、それぞれ `ingest/` と `docs/` に移す。
+- フェーズ0の前に作ったスクリプトとレポートは、それぞれ `scripts/` と `docs/reports/` に移した。
 
 ---
 
 ## 16. 開発の進め方
 
-| フェーズ | 内容 | 終わったと言える状態 |
-|---|---|---|
-| 0. 準備 | Gitリポジトリ、Python 3.12と uv、ディレクトリ構成、GCPプロジェクトとtfstateバケットを手作業で作る | GitHubにリポジトリがある |
-| 1. 基盤 | Terraformでバケット・データセット・raw/opsのテーブル・サービスアカウントを作る | `terraform apply` で環境ができる |
-| 2. 1本通す | 宿泊の第2表だけで、ingest（手元から実行）→ raw → dbt（staging・marts 1つずつ）→ Looker Studioのページ1 | ダッシュボードに数字が出る |
-| 3. イベント駆動にする | Eventarc・Workflows・Cloud Run Jobs・Scheduler を作り、アップロードをきっかけに動かす | 10年分をアップロードすると、翌日にはmartsが更新されている |
-| 4. 広げる | 消費動向の変換処理（5表）、シード、全モデル | 全martsが本番で作られ、dbtのテストがすべて通る。どのmartもBIツールからそのまま読める |
-| 5. 品質とCI/CD | dbt tests、PRでのCI、mainでのデプロイ、dbt docs（リネージ）の公開、監視 | PRでテストが動き、マージするとデプロイされる。公開したdbt docsで、rawからmartsまでのデータの流れをたどれる |
-| 6. 仕上げ | README、アーキテクチャ図 | 第三者が読んで、基盤を再現でき、martsをBIツールにつなぐ方法が分かる |
+| フェーズ | 内容 | 終わったと言える状態 | 状態 |
+|---|---|---|---|
+| 0. 準備 | Gitリポジトリ、Python 3.12と uv、ディレクトリ構成、GCPプロジェクトとtfstateバケットを手作業で作る | GitHubにリポジトリがある | 完了（2026-11-03） |
+| 1. 基盤 | Terraformでバケット・データセット・raw/opsのテーブル・サービスアカウントを作る | `terraform apply` で環境ができる | 完了（2026-11-04。PR #1） |
+| 2. 1本通す | 宿泊の第2表だけで、ingest（手元から実行）→ raw → dbt（staging・marts 1つずつ）→ Looker Studioのページ1 | ダッシュボードに数字が出る | 完了（2026-11-04。PR #2・#3） |
+| 3. イベント駆動にする | Eventarc・Workflows・Cloud Run Jobs・Scheduler を作り、アップロードをきっかけに動かす | 10年分をアップロードすると、翌日にはmartsが更新されている | 完了（2026-11-04。PR #4） |
+| 4. 広げる | 消費動向の変換処理（5表）、シード、全モデル | 全martsが本番で作られ、dbtのテストがすべて通る。どのmartもBIツールからそのまま読める | 完了（2026-11-05。PR #5） |
+| 5. 品質とCI/CD | dbt tests、PRでのCI、mainでのデプロイ、dbt docs（リネージ）の公開、監視 | PRでテストが動き、マージするとデプロイされる。公開したdbt docsで、rawからmartsまでのデータの流れをたどれる | 完了（2026-11-05。PR #8〜#10。可視化をスコープ外にしたのは PR #6・#7） |
+| 6. 仕上げ | README、アーキテクチャ図 | 第三者が読んで、基盤を再現でき、martsをBIツールにつなぐ方法が分かる | 完了（2026-11-06） |
 
 > **D-21：最初に「1本の細い流れ」を最後まで通す**
 > 層ごとに横へ広げていくと、最後の可視化までたどり着かないまま時間を使い切りやすい。フェーズ2で全部の層がつながるので、それ以降はどこで止めても成果物として成り立つ。設計の問題（列が足りない、粒度が合わない、など）も早く見つかる。
@@ -639,6 +696,10 @@ Cloud Scheduler（毎日 04:00 JST）
 | 都道府県別の推計消費額 | 1泊当たり消費単価のサンプル数が少ない県では値がぶれる | 回答数が `min_respondents`（30）未満の県・国籍には `is_low_sample` を付け、dbt docsの列の説明に注記する。BIツールでは、この列で色を変えるなどして示す |
 | 報道発表の値と一致しない | 表3-1はパッケージツアー代金の内訳を含まない | 将来「参考1」を取り込む対象に加えることを検討する |
 | 宿泊旅行統計の旧形式の検証 | 2017〜2019年は列の対応だけを確かめている | 主要な値を公表値と照らし合わせるテストを足す |
+| 監視のアラートの発火 | ingest の rejected / failed と Workflows の失敗のアラートは、わざと失敗を起こして確かめていない | 次に rejected になるファイルが出たときに、メールが届くことを確かめる。早めに確かめるなら、パスのルールに合わないファイルを landing に上げる |
+| GitHub Actionsのアクションの固定 | アクションはメジャーバージョンのタグ（`@v4` など）で指定していて、タグが書き換えられると別のコードが動く | `sa-github-deployer` を使うジョブから順に、コミットのSHAでの固定を検討する |
+| `sa-github-deployer` の権限の強さ | IAMを管理するため `projectIamAdmin` を持ち、自分に権限を足すこともできる | 使えるのを環境 `production`（mainだけ・承認が必要）のジョブに絞っている（D-18）。承認の前に plan のまとめを読む |
+| Looker Studioの接続の認証 | 個人のGoogleアカウントではサービスアカウントを選べず、オーナーの認証で接続している（D-15の現状） | データソースを編集できるのはオーナーだけにしている。サービスアカウントが使える環境に移したら `sa-looker` に切り替える |
 | 公開したページ1の費用 | 可視化はスコープ外（D-22）。動作確認のページ1だけが公開されていて、閲覧が増えるとクエリの費用が増える | martsを小さく保ち、キャッシュを効かせ、予算アラートで見張る。BIツールでページを増やすときも同じ |
 
 ---

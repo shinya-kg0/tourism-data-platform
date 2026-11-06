@@ -142,7 +142,6 @@ DBT_RAW_DATASET=dbt_${DBT_USER}_raw uv run dbt build
 
 - 開発用のデータセットのテーブルには有効期限を付けておく（本番の raw と同じスキーマ：`terraform/modules/bigquery/schemas/`）。
 
-rejected と failed をメールで知らせる仕組み（仕様書 13 章）は、フェーズ5で追加する。
 
 ## 6. GitHub Actions（PR の CI とデプロイの設定）
 
