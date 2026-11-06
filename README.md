@@ -24,6 +24,93 @@
 - **テストが関所**：dbt のテストに落ちると、その先の marts は更新されない
 - **権限を処理ごとに分ける**：サービスアカウントを処理ごと・CI のジョブごとに分ける。本番を変えられるのは、承認を経たデプロイのジョブだけ（D-17、D-18）
 
+## アーキテクチャ
+
+### データの流れ
+
+```mermaid
+flowchart LR
+    user(["人"]) -->|"Excel をアップロード"| landing[("GCS<br>landing")]
+
+    subgraph ingestFlow["取り込み（イベント駆動）"]
+        eventarc["Eventarc<br>ingest-on-upload"] --> wfIngest["Workflows<br>ingest"]
+        wfIngest -->|"失敗したら最大 3 回やり直す"| jobIngest["Cloud Run Job<br>ingest（Python）"]
+    end
+
+    subgraph transformFlow["変換（毎日 04:00 JST）"]
+        scheduler["Cloud Scheduler<br>transform-daily"] --> wfTransform["Workflows<br>transform"]
+        wfTransform -->|"新しい取り込みがあるときだけ"| jobDbt["Cloud Run Job<br>dbt（dbt build）"]
+    end
+
+    subgraph bq["BigQuery"]
+        raw[("raw")] --> staging[("staging")] --> intermediate[("intermediate")] --> marts[("marts")]
+        ops[("ops<br>取り込みと dbt の記録")]
+    end
+
+    landing -->|"object.finalized"| eventarc
+    jobIngest -->|"構造を検査し、範囲ごとに入れ替える"| raw
+    jobIngest -->|"成功"| archive[("GCS<br>archive")]
+    jobIngest -->|"ルール・構造に合わない"| rejected[("GCS<br>rejected")]
+    jobIngest --> ops
+    wfTransform -->|"取り込みの記録を確かめる"| ops
+    jobDbt -->|"テストに通ったときだけ marts を更新"| staging
+
+    marts -.->|"marts だけを読む（D-15）<br>可視化はスコープ外（D-22）"| bi["BI ツール<br>Looker Studio は<br>ページ 1 のみ作成済み"]
+
+    jobIngest -.->|"rejected / failed のログ"| monitoring["Cloud Monitoring"]
+    wfIngest -.->|"実行の失敗"| monitoring
+    wfTransform -.->|"実行の失敗"| monitoring
+    monitoring -->|"アラート"| mail(["メール"])
+```
+
+- 実線は処理の流れ、点線は監視と、未実装の BI ツールへのつなぎ口です。
+- 詳しくは仕様書の 2 章（全体）、5 章（取り込み）、7 章（dbt）、9 章（Workflows）を見てください。
+
+### CI/CD と認証
+
+```mermaid
+flowchart LR
+    subgraph github["GitHub Actions"]
+        direction TB
+        subgraph prFlow["PR"]
+            lint["lint-test<br>ruff・pytest"]
+            prPlan["terraform-plan<br>sa-github-plan"]
+            dbtCi["dbt-ci<br>sa-github-dbt-ci"]
+        end
+        subgraph mainFlow["main へのマージ"]
+            build["build-push<br>sa-github-builder"] --> mainPlan["terraform-plan<br>sa-github-plan"]
+            mainPlan --> approval{"環境 production<br>の承認"}
+            approval --> apply["terraform-apply<br>sa-github-deployer"]
+            docs["dbt-docs<br>sa-github-docs"]
+        end
+    end
+
+    wif["Workload Identity 連携<br>このリポジトリのトークンだけ<br>キーなし（D-18）"]
+
+    prPlan --> wif
+    dbtCi --> wif
+    build --> wif
+    mainPlan --> wif
+    apply --> wif
+    docs --> wif
+
+    subgraph gcp["GCP"]
+        ar[("Artifact Registry")]
+        tf["Terraform が管理するリソース<br>Cloud Run Jobs・Workflows・IAM ほか"]
+        ciDataset[("BigQuery<br>ci_pr_番号")]
+        prod[("BigQuery<br>本番のデータセット")]
+    end
+
+    wif -->|"イメージを送る"| ar
+    wif -->|"plan は読むだけ / apply で変更"| tf
+    wif -->|"raw を読み、PR 専用に書き出す"| ciDataset
+    wif -->|"テーブルの定義を読む"| prod
+    docs --> pages["GitHub Pages<br>dbt docs"]
+```
+
+- GCP を使うジョブは、ジョブごとに別のサービスアカウントになります。PR からは読み取りが中心のアカウントしか使えません。
+- 本番を変えられる `sa-github-deployer` は、環境 `production`（main だけ・承認が必要）のジョブからしか使えません。
+
 ## marts を BI ツールにつなぐ
 
 BI ツールが読むのは `marts` データセットだけです（D-15）。結合と推計は BigQuery の中で済ませてあるので、ブレンドや計算フィールドを使わずに、1 つのグラフに 1 つの mart をつなぐだけで作れます（D-09）。
