@@ -18,13 +18,12 @@ mart ごとに 1 つのデータソースを作る（D-09）。
 
 ### データの認証情報
 
-仕様では、`marts` だけを読めるサービスアカウント `sa-looker` で読む（D-15）。
+仕様では、`marts` だけを読めるサービスアカウントで読む（D-15）。今はそのアカウントを作っていないので、使うときは先に作る。
 
-1. データソースの編集画面で「データの認証情報」→「サービス アカウント」を選ぶ
-2. `sa-looker@tourism-data-platform.iam.gserviceaccount.com` を入力する
-3. Looker Studio のサービスエージェントに、`sa-looker` のトークンを作る権限（`roles/iam.serviceAccountTokenCreator`）が必要
+1. Terraform（`modules/iam`）で、`marts` のデータ閲覧者とジョブユーザーだけを持つサービスアカウントを作る
+2. Looker Studio のサービスエージェントに、そのアカウントのトークンを作る権限（`roles/iam.serviceAccountTokenCreator`）を付ける
    - サービスエージェントのメールアドレスは、[こちらのページ](https://lookerstudio.google.com/c/serviceAgentHelp) に表示される
-   - 権限は Terraform（`modules/iam`）で付ける
+3. データソースの編集画面で「データの認証情報」→「サービス アカウント」を選び、作ったアカウントのメールアドレスを入力する
 
 > **個人の Google アカウントで「サービス アカウント」が選べない場合**
 > 一時的に「オーナーの認証情報」で接続し、この節に結果を記録する。このとき閲覧者は、オーナーの権限で `marts` を読むことになる（オーナーは raw も読めるが、データソースが指すのは marts のテーブルだけ）。
