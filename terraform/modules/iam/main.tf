@@ -14,7 +14,7 @@ locals {
     "sa-github-dbt-ci"   = "GitHub Actions：PR の dbt build（ci_pr_{番号} に書き出す）"
     "sa-github-builder"  = "GitHub Actions：main へのマージでコンテナイメージを送る"
     "sa-github-deployer" = "GitHub Actions：main へのマージで terraform apply（環境 production のみ）"
-    "sa-github-docs"     = "GitHub Actions：main へのマージで dbt docs を作る（メタデータのみ）"
+    "sa-github-docs"     = "GitHub Actions：main へのマージで dbt docs を作る（読み取りのみ）"
   }
 
   bucket_roles = [
