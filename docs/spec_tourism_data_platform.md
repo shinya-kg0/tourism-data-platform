@@ -483,11 +483,11 @@ Cloud Scheduler（毎日 04:00 JST）
 | 3. 地域分析 | `mart_prefecture_yearly`、`mart_prefecture_nationality_yearly` | 都道府県の色分け地図、都道府県×国籍のヒートマップ、推計消費額 | スコープ外（martは作成済み） |
 | 4. 季節性 | `mart_seasonality_monthly` | 月×国籍のヒートマップ、年ごとの月別推移 | スコープ外（martは作成済み） |
 | 5. 宿泊の受け入れ | `mart_occupancy_yearly` | 施設タイプ別の稼働率、都道府県別の稼働率の地図 | スコープ外（martは作成済み） |
-| 6. データについて | — | 出典、欠けている期間、調査の変更、推計の方法 | スコープ外（載せる内容は `docs/looker_studio.md` の参考の節） |
+| 6. データについて | — | 出典、欠けている期間、調査の変更、推計の方法 | スコープ外（載せる内容は、dbt docs の各モデルの説明にある） |
 
 - 想定していた全ページ共通の絞り込み：年、国籍、都道府県（どのmartにも `year` があり、国籍・都道府県のmartにはコードと名前の列がある）
 - ページ1は、フェーズ2の時点の `mart_kpi_yearly`（延べ宿泊者数・外国人比率）で作った。フェーズ4で足した列（客室稼働率・消費単価・平均泊数）のスコアカードは作っていない。
-- ページ2以降の作り方の案は、`docs/looker_studio.md` に「参考（スコープ外・未検証）」として残す。
+- ページ2以降は、このページ構成と、dbt docs の各 mart の説明をもとに作る。
 
 ### 8.2 データへの接続と公開（ページ1）
 
@@ -660,13 +660,13 @@ Cloud Scheduler（毎日 04:00 JST）
 ├── terraform/
 │   ├── modules/                # storage / bigquery / pipeline / iam / monitoring
 │   └── envs/prod/
-├── docs/                       # 仕様書、運用手順、作業レポート、looker_studio.md
+├── docs/                       # 仕様書、運用手順、looker_studio.md
 ├── scripts/                    # 見出し定義の作成、手元からのイメージの作成（build_push.sh）
 └── .github/workflows/         # ci.yml（PR）/ deploy.yml（mainへのマージ）
 ```
 
 - `.env`、`data/`、`*.tfstate` はGitで管理しない。
-- フェーズ0の前に作ったスクリプトとレポートは、それぞれ `scripts/` と `docs/reports/` に移した。
+- フェーズ0の前のデータ調査のスクリプトとレポートは、リポジトリに含めない（基盤の再現には要らないため）。
 
 ---
 

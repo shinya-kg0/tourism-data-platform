@@ -150,7 +150,7 @@ BI ツールが読むのは `marts` データセットだけです（D-15）。�
 | `dbt/` | dbt プロジェクト（モデル、シード、テスト、マクロ、Dockerfile） |
 | `workflows/` | Cloud Workflows の定義（ingest / transform） |
 | `terraform/` | GCP リソース（`modules/` と `envs/prod/`） |
-| `docs/` | 仕様書、運用手順、Looker Studio の構築手順（ページ 1 のみ）、作業レポート（`reports/`） |
+| `docs/` | 仕様書、運用手順、Looker Studio の構築手順（ページ 1 のみ） |
 | `scripts/` | 見出し定義の作成（`generate_header_defs.py`）、手元からのイメージの作成（`build_push.sh`） |
 | `.github/workflows/` | CI（`ci.yml`）とデプロイ（`deploy.yml`） |
 
