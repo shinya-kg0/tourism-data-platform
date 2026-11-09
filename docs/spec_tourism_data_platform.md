@@ -585,7 +585,7 @@ Cloud Scheduler（毎日 04:00 JST）
 > mainへのマージでも、イメージを送る（builder）・本番を変える（deployer）・dbt docsを作る（docs）を分ける。`sa-github-deployer` はIAMを管理するため `projectIamAdmin` を持ち、自分に権限を足すこともできてしまう。そこで、使えるのを「mainだけをデプロイできる環境 `production` の、承認を経たジョブ」に絞り、イメージの送信やdocsの作成のような、承認の要らない処理には使わせない。
 
 > **D-19：取り込み処理ではe-Stat APIを使わない**
-> 取り込みの対象はアップロードされたExcelだけで、APIキーは必要ない。そのためSecret Managerも使わない。APIは、手元のノートブックで探したり検証したりするときにだけ使う。
+> 取り込みの対象はアップロードされたExcelだけで、APIキーは必要ない。そのためSecret Managerも使わない。APIは、基盤を作る前のデータの調査でだけ使った。
 
 ---
 
@@ -650,7 +650,7 @@ Cloud Scheduler（毎日 04:00 JST）
 │   │   ├── validation.py       # 構造の検査
 │   │   └── bq_writer.py        # 一時テーブルへの読み込みとトランザクションでの入れ替え
 │   ├── header_defs/            # 見出しの定義（D-06）
-│   ├── tests/                  # 単体テストと小さなExcelの見本
+│   ├── tests/                  # 単体テスト（小さなExcelの見本はテストの中で作る）
 │   └── Dockerfile
 ├── dbt/
 │   ├── models/{staging,intermediate,marts}/
@@ -663,7 +663,6 @@ Cloud Scheduler（毎日 04:00 JST）
 ├── terraform/
 │   ├── modules/                # storage / bigquery / pipeline / iam / monitoring
 │   └── envs/prod/
-├── notebooks/                  # 今あるノートブック（探索・検証用）
 ├── docs/                       # 仕様書、運用手順、作業レポート、looker_studio.md
 ├── scripts/                    # 見出し定義の作成、手元からのイメージの作成（build_push.sh）
 └── .github/workflows/         # ci.yml（PR）/ deploy.yml（mainへのマージ）

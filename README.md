@@ -152,7 +152,6 @@ BI ツールが読むのは `marts` データセットだけです（D-15）。�
 | `terraform/` | GCP リソース（`modules/` と `envs/prod/`） |
 | `docs/` | 仕様書、運用手順、Looker Studio の構築手順（ページ 1 のみ）、作業レポート（`reports/`） |
 | `scripts/` | 見出し定義の作成（`generate_header_defs.py`）、手元からのイメージの作成（`build_push.sh`） |
-| `notebooks/` | 探索・検証用のノートブックの置き場所 |
 | `.github/workflows/` | CI（`ci.yml`）とデプロイ（`deploy.yml`） |
 
 ## 開発環境の準備

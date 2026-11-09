@@ -5,8 +5,6 @@
 data/
 *.xlsx
 *.xls
-!ingest/tests/fixtures/*.xlsx
-!ingest/tests/fixtures/*.xls
 
 # Python
 .venv/
@@ -14,7 +12,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
-.ipynb_checkpoints/
 
 # dbt
 dbt/target/
