@@ -152,8 +152,9 @@ flowchart LR
 
 | 調査 | 期間 | 形式 | 対応 |
 |---|---|---|---|
-| 宿泊旅行統計 | 2016〜2019年 | 旧形式（結合セル・注記付き・単位の行なし。2016年は地域コードなし） | 新形式の見出し定義を列の位置で当てはめる（D-06） |
+| 宿泊旅行統計 | 2016〜2019年 | 旧形式（結合セル・注記付き・単位の行なし） | 新形式の見出し定義を列の位置で当てはめる（D-06） |
 | 宿泊旅行統計 | 2020年〜 | 新形式（見出しが4段） | 見出し定義と照合する |
+| 宿泊旅行統計 | 2016年、2020〜2024年 | 地域コードの列がない | rawにはExcelにあるコードだけを入れ、stagingで `seed_prefecture` から補う |
 | 消費動向調査 | 2016・2017年（暦年） | 表番号が旧形式（第N表）。表3-4（訪問地別の1泊当たり消費単価）がない。総数の列が「全体」、費目名が一部違う（宿泊料金など） | `consumption_v1`。見出し定義にシート名を持たせ「表X-Y」にそろえる |
 | 消費動向調査 | 2018年〜2025年（暦年・四半期） | 「表X-Y」形式、国籍・地域は21区分 | `consumption_v2`。2024年4–6月期からの新調査（インバウンド消費動向調査）も同じ形式だった |
 | 消費動向調査 | 2026年〜 | 国籍・地域が24区分（メキシコ・北欧・中東を追加） | `consumption_v3` |
@@ -168,7 +169,7 @@ flowchart LR
 
 | バケット | 用途 | 設定 |
 |---|---|---|
-| `{project}-landing` | アップロード先。Eventarcの監視対象 | 版の保存：有効、保存期間：30日で削除 |
+| `{project}-landing` | アップロード先。Eventarcの監視対象 | 版の保存：有効、保存期間：30日で削除（古い版も、版でなくなってから30日で削除） |
 | `{project}-archive` | 取り込みに成功した元ファイルを保管する | 版の保存：有効、削除しない |
 | `{project}-rejected` | 不正なファイルを隔離する | 90日で削除 |
 | `{project}-tfstate` | Terraformの状態ファイル | 版の保存：有効（最初の1回だけ手作業で作る） |
@@ -219,7 +220,7 @@ gs://{project}-landing/{survey}/{period_type}/{year}[_Q{quarter}][_{release}].{x
 Eventarc（バケット・オブジェクト名・世代番号）
   └▶ Workflows「ingest」
         └▶ Cloud Run Job「ingest」（実行時の引数でオブジェクト名と世代番号を渡す）
-              1. 二重処理の確認：ingestion_log で (source_uri, generation) が成功済みなら何もしないで終わる
+              1. 二重処理の確認：ingestion_log で (source_uri, generation) が成功済みなら、「skipped」を記録して終わる
               2. 取り込みの記録を「running」で書き込む
               3. パスを検証し、調査・期間・年・期・公表区分を取り出す        ── 不正なら rejected へ
               4. Excelをダウンロードし、形式のバージョンを判定する
@@ -228,9 +229,11 @@ Eventarc（バケット・オブジェクト名・世代番号）
               6. 縦持ちに変換し、行ごとに検査する（地域・項目が空でないか、値が数値または記号か）
               7. BigQueryの一時テーブルに読み込む
               8. トランザクションの中で、raw の該当範囲を DELETE → INSERT する
-              9. 元ファイルを archive に移す（名前に世代番号を付ける）。landing からは消す
+              9. 元ファイルを archive に移す（名前に世代番号を付ける。例：`2026__{世代番号}.xlsx`）。landing からは消す。rejected へ移すときも同じ名前にする
              10. 取り込みの記録を「succeeded」と行数で更新する
 ```
+
+- 結果（status・source_uri・世代番号など）は、1行のJSONの構造化ログでも出す。rejected / failed のログは監視の対象になる（13章）。
 
 ### 5.2 終了の種類とやり直し
 
@@ -239,7 +242,7 @@ Eventarc（バケット・オブジェクト名・世代番号）
 | succeeded | 正常に終わった | 0 | 終わる | なし |
 | skipped | 同じ世代のファイルがすでに取り込み済み | 0 | 終わる | なし |
 | rejected | パスの違反、構造の不一致、行の検査で不合格 | 0（rejected として記録） | 終わる（やり直さない） | あり |
-| failed | BigQueryやGCSの一時的なエラー | 1 | 間隔を広げながら最大3回やり直す | 3回とも失敗したら通知 |
+| failed | BigQueryやGCSの一時的なエラー | 1 | 間隔を広げながら最大3回やり直す（ジョブを起動できなかったときも同じ） | 失敗のたびに通知（ログの指標）。3回やり直しても失敗したら、Workflowsの失敗としても通知 |
 
 > **D-04：データの誤りと一時的なエラーを分ける**
 > 構造が合わないExcelは何度やり直しても失敗するので、やり直すのは無駄である。データの誤りは rejected として隔離し、人に知らせる。やり直しは一時的なエラーのときだけにする。
@@ -267,7 +270,7 @@ COMMIT TRANSACTION;
 
 > **D-05：追記ではなく、決まった単位で丸ごと入れ替える**
 > 追記にすると、上げ直しや数値の改定で同じ期のデータが二重に入る。単位を決めて入れ替えれば、何度実行しても結果は同じになる。トランザクションを使うので、入れ替えの途中の状態が外から見えることもない。
-> 公表区分ごとに分けて残すので、1次速報と確報を比べることもできる。どの区分を使うかはstaging層で決める（6.3節）。
+> 公表区分ごとに分けて残すので、1次速報と確報を比べることもできる。どの区分を使うかはstaging層で決める（7.2節）。
 
 ### 5.5 見出しの定義ファイル
 
@@ -281,7 +284,7 @@ COMMIT TRANSACTION;
 - 消費動向調査の行の見出し（入国空港の一覧、属性の区分など）は年によって増減するため照合しない。シートのものを `row_category` / `row_item` に入れ、意味付けは staging で行う。内訳の行は「親の項目／内訳」（例：`交通費／バス`）とする。
 
 > **D-06：見出しの定義をコードとしてリポジトリで管理する**
-> 今の `fetch_overnight_trips.py` は、同じ実行の中で新しい年を先に読み、その見出しを旧形式の年に当てはめている。1ファイルずつ処理する方式では、ほかの年のファイルが手元にないので、この方法は使えない。定義をファイルにしておけば1ファイルだけで処理できる。また定義の変更がGitの差分としてレビューできるので、形式の変化に気づきやすくなる。
+> 基盤を作る前の取得スクリプト（`fetch_overnight_trips.py`。リポジトリには移していない）は、同じ実行の中で新しい年を先に読み、その見出しを旧形式の年に当てはめている。1ファイルずつ処理する方式では、ほかの年のファイルが手元にないので、この方法は使えない。定義をファイルにしておけば1ファイルだけで処理できる。また定義の変更がGitの差分としてレビューできるので、形式の変化に気づきやすくなる。
 
 ### 5.6 実行環境
 
@@ -289,8 +292,8 @@ COMMIT TRANSACTION;
 |---|---|
 | 言語 | Python 3.12（依存ライブラリは uv で管理） |
 | 主なライブラリ | pandas、openpyxl、xlrd、google-cloud-storage、google-cloud-bigquery |
-| Cloud Run Job | メモリ 2GiB、CPU 1、タイムアウト 15分、タスク 1 |
-| コード | 今の `fetch_overnight_trips.py` と `fetch_excel_to_csv.py` を `ingest/` パッケージに移し、1ファイル単位で処理する形に作り直す |
+| Cloud Run Job | メモリ 2GiB、CPU 1、タイムアウト 15分、タスク 1、ジョブ自身のやり直しなし（やり直しはWorkflowsが決める） |
+| コード | `ingest/` パッケージ。基盤を作る前の取得スクリプト（`fetch_overnight_trips.py`・`fetch_excel_to_csv.py`）の処理を、1ファイル単位で処理する形に作り直した |
 
 ---
 
@@ -302,7 +305,7 @@ COMMIT TRANSACTION;
 |---|---|---|
 | `raw` | 取り込んだ縦持ちのデータ | ingest |
 | `ops` | 取り込みとdbt実行の記録 | ingest、Workflows |
-| `staging` | 型・表記・公表区分をそろえたもの | dbt |
+| `staging` | 型・表記・公表区分をそろえたもの。シードもここに置く | dbt |
 | `intermediate` | 調査どうしを結合したもの | dbt |
 | `marts` | BIツールから読む集計表 | dbt |
 | `dbt_{開発者名}` / `ci_pr_{番号}` | dbtの開発用・CI用 | dbt（CI用はPRを閉じたら消す） |
@@ -318,7 +321,7 @@ COMMIT TRANSACTION;
 | year | INT64 | 年 |
 | month | INT64 | 月（0＝年計） |
 | table_id | STRING | 表番号（例：第2表、参考第1表） |
-| area_code | STRING | 都道府県コード（全国・運輸局は NULL） |
+| area_code | STRING | Excelにある地域コード。コードの列がない年（2016年、2020〜2024年）は NULL。stagingで補う |
 | area_name | STRING | 地域名 |
 | target | STRING | 全体 / 外国人 |
 | header_group / header_sub / header_item | STRING | 見出し（3段） |
@@ -421,7 +424,7 @@ COMMIT TRANSACTION;
 | シード | 列 | 用途 |
 |---|---|---|
 | `seed_nationality` | nationality_code、name_ja、overnight_label、consumption_label、region、sort_order | 「米国/アメリカ」「英国/イギリス」の違いを吸収し、2つの調査を結合する。ALL（全体）と、2026年からの区分（メキシコ・北欧・中東）も持つ |
-| `seed_prefecture` | pref_code、name_ja、region、transport_bureau | 都道府県と地方・運輸局の対応 |
+| `seed_prefecture` | pref_code、pref_name、region、transport_bureau | 都道府県と地方・運輸局の対応 |
 | `seed_release_status` | release_status、priority、label_ja | 公表区分の優先順位 |
 | `seed_spend_category` | consumption_label、spend_category、spend_stage、sort_order | 表2-1 の費目名を年をまたいでそろえる（2017年以前の「宿泊料金」→「宿泊費」など） |
 
@@ -432,13 +435,14 @@ COMMIT TRANSACTION;
 
 | 種類 | 対象 | 内容 |
 |---|---|---|
-| 標準テスト | 全staging | 主キーに `not_null` と `unique`、`target`・`release_status` に `accepted_values` |
-| リレーション | 国籍・都道府県 | 国籍名と都道府県コードが、すべてシードにあること |
-| 独自テスト | `stg_overnight__stays` | 年計と月別合計の差が、全国で±10×12以内 |
-| 独自テスト | overnight全般 | 全表で、年・月ごとの地域の数が58であること |
+| 標準テスト | staging・intermediate・marts | 主キー（列の組み合わせは `dbt_utils.unique_combination_of_columns`）と `not_null`。`target`・`release_status`・`area_type` などの区分の列に `accepted_values` |
+| リレーション | staging・marts の国籍・都道府県 | 国籍コードと都道府県コードが、すべてシードにあること |
+| 独自テスト | `stg_overnight__stays` | 年計と1〜12月の合計の差が、丸めの範囲（1セル±5 × 13セル＝±65）以内 |
+| 独自テスト | `stg_overnight__stays` | 47都道府県の合計＝全国、所属する都道府県の合計＝運輸局等（どちらも丸めの範囲以内。`seed_prefecture` の対応の確認も兼ねる） |
+| 独自テスト | overnight全般 | 年・月ごとに地域の数が58（全国1・都道府県47・運輸局等10）であること。rawの全表と `stg_overnight__stays` の両方で確かめる |
 | 独自テスト | raw全般 | `value` が空なら、必ず `flag` が入っていること |
 | 独自テスト | 消費動向 | 表2-1 の日本滞在中の費目別「購入率×購入者単価」の合計が、表3-1 の消費単価と1％以内で一致すること（2018年以降。行・列の読み違いを見つける） |
-| 独自テスト | marts | 主要な数字（延べ宿泊者数など）の前年比が±80％を超えたら警告（コロナ期間は除く。`severity: warn`） |
+| 独自テスト | `mart_kpi_yearly` | 延べ宿泊者数（全体・日本人・外国人）と消費単価の前年比が±80％を超えたら警告（コロナの影響期間とその反動の2020〜2023年は除く。`severity: warn`） |
 
 > **D-11：今回手作業でした検証を、dbt testsにする**
 > 宿泊旅行統計の整備では、年計＝月合計、58地域、欠けている値に必ず記号があること、を手作業で確かめた。テストにしておけば、毎回自動で確かめられる。`dbt build` はテストに失敗するとその先のモデルを更新しないので、おかしなデータがmarts（とその先のBIツール）に出ない。
@@ -452,8 +456,11 @@ Cloud Scheduler（毎日 04:00 JST）
         2. なければ終わる（手動で force=true を指定したときは続ける）
         3. Cloud Run Job「dbt」を実行：dbt build --target prod（シードも含む。dbt deps はイメージを作るときに済ませる）
         4. ops.dbt_runs に結果を記録する
-        5. 失敗したら通知する
+        5. 失敗したら5分おいて1回だけやり直す。それでも失敗したら、ops.dbt_runs に failed を記録し、実行を失敗で終わらせる（13章の監視で通知される）
 ```
+
+- Cloud Run Job「dbt」：メモリ 1GiB、CPU 1、タイムアウト 30分、ジョブ自身のやり直しなし。
+- 手動で実行したときは `trigger` が `manual`、Cloud Scheduler からは `schedule` になる。
 
 > **D-12：dbtは1日1回、新しいデータがあるときだけ実行する（Aパターン）**
 > ファイルごとにdbtを動かすと、10年分を一度に上げたときにdbtが10回同時に動き、テーブルの更新がぶつかる。取り込みはファイルごと、変換は1日1回にまとめる、と分ければ、同時に動くことによる問題が起きない。公表は年に数回なので、最大1日の遅れは問題にならない。新しいデータがない日は何もしないので、無駄な実行もない。
@@ -510,8 +517,8 @@ Cloud Scheduler（毎日 04:00 JST）
 
 | ワークフロー | きっかけ | 処理 | やり直し |
 |---|---|---|---|
-| `ingest` | Eventarc（landing へのファイル作成） | Cloud Run Job「ingest」を、引数を上書きして実行し、終わるまで待つ | failed のときだけ、間隔を広げながら最大3回 |
-| `transform` | Cloud Scheduler（毎日 04:00 JST）、手動 | ingestion_log を確認 → Cloud Run Job「dbt」→ dbt_runs に記録 | 1回 |
+| `ingest` | Eventarc（landing へのファイル作成） | Cloud Run Job「ingest」を、引数を上書きして実行し、終わるまで待つ | failed（終了コード1）とジョブを起動できなかったときだけ、間隔を広げながら（60秒から最大600秒）最大3回 |
+| `transform` | Cloud Scheduler（毎日 04:00 JST）、手動 | ingestion_log を確認 → Cloud Run Job「dbt」→ dbt_runs に記録 | 5分おいて1回 |
 
 > **D-16：処理の制御には Workflows を使う**
 > EventarcからCloud Run Jobsを直接起動することはできない。Workflowsは、実行の順番・やり直し・待ち合わせ・BigQueryへの問い合わせを設定ファイル（YAML）で書け、Terraformで管理でき、使用量も無料枠に収まる。Cloud Composer（Airflow）は常に動いているため月数万円かかり、この規模には大げさである。
@@ -524,7 +531,7 @@ Cloud Scheduler（毎日 04:00 JST）
 
 | 区分 | リソース |
 |---|---|
-| 基盤 | 必要なAPIの有効化、Artifact Registry |
+| 基盤 | 必要なAPIの有効化、Artifact Registry（イメージごとに新しい10個を残し、それより古く30日を過ぎたものを消す） |
 | ストレージ | GCSバケット（landing / archive / rejected） |
 | DWH | BigQueryのデータセット（raw / ops / staging / intermediate / marts）、raw・ops のテーブル |
 | 処理 | Cloud Run Jobs（ingest / dbt）、Workflows（ingest / transform）、Eventarcのトリガー、Cloud Scheduler |
@@ -610,8 +617,8 @@ Cloud Scheduler（毎日 04:00 JST）
 
 | 監視の対象 | 方法 | 通知 |
 |---|---|---|
-| ingest の rejected / failed | ログに基づく指標 → アラート | メール |
-| transform・ingest の失敗（dbtテストの不合格、ingestのやり直しの失敗・ジョブを起動できない場合を含む） | Workflowsの実行失敗 → アラート | メール |
+| ingest の rejected / failed | 構造化ログの `status` を数える指標（`ingest_problem`）→ 5分間で1件以上ならアラート | メール |
+| transform・ingest の失敗（dbtテストの不合格、ingestのやり直しの失敗・ジョブを起動できない場合を含む） | Workflowsの実行失敗（`finished_execution_count` の FAILED）→ 5分間で1件以上ならアラート | メール |
 | 費用 | 予算アラート（手作業で設定。10.2） | メール |
 
 ---
@@ -639,6 +646,7 @@ Cloud Scheduler（毎日 04:00 JST）
 │   ├── src/ingest/
 │   │   ├── main.py             # 入口（引数：オブジェクト名・世代番号）
 │   │   ├── path_rules.py       # パスの検証（4.2節）
+│   │   ├── gcs.py              # 元ファイルの取得と archive / rejected への移動
 │   │   ├── parsers/            # overnight.py / consumption.py
 │   │   ├── validation.py       # 構造の検査
 │   │   └── bq_writer.py        # 一時テーブルへの読み込みとトランザクションでの入れ替え
@@ -648,7 +656,7 @@ Cloud Scheduler（毎日 04:00 JST）
 ├── dbt/
 │   ├── models/{staging,intermediate,marts}/
 │   ├── seeds/
-│   ├── tests/                  # 独自テスト
+│   ├── tests/                  # 独自テスト（7.4節）
 │   ├── macros/
 │   ├── dbt_project.yml / profiles.yml
 │   └── Dockerfile
@@ -659,7 +667,7 @@ Cloud Scheduler（毎日 04:00 JST）
 ├── notebooks/                  # 今あるノートブック（探索・検証用）
 ├── docs/                       # 仕様書、運用手順、作業レポート、looker_studio.md
 ├── scripts/                    # 見出し定義の作成、手元からのイメージの作成（build_push.sh）
-└── .github/workflows/
+└── .github/workflows/         # ci.yml（PR）/ deploy.yml（mainへのマージ）
 ```
 
 - `.env`、`data/`、`*.tfstate` はGitで管理しない。
