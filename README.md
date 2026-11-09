@@ -140,7 +140,7 @@ BI ツールが読むのは `marts` データセットだけです（D-15）。�
 | main へのマージ | イメージの作成 → plan → **承認** → `terraform apply`。あわせて dbt docs を GitHub Pages に公開 |
 
 - main はブランチの保護をかけていて、PR の 3 つのチェックが通らないとマージできません。
-- 詳しくは仕様書 12 章と、運用手順の 1 節・6 節を見てください。
+- 詳しくは仕様書 12 章と、運用手順の 1 節・5 節を見てください。
 
 ## ディレクトリ構成
 
@@ -183,12 +183,12 @@ cd dbt && uv sync && uv run dbt deps && uv run dbt build
    cp backend.hcl.example backend.hcl && cp terraform.tfvars.example terraform.tfvars   # 値を埋める
    terraform init -backend-config=backend.hcl
    ```
-   - `github_oidc_subject_prefix` は、`gh api repos/{owner}/{repo}/actions/oidc/customization/sub` の `sub_claim_prefix` で確かめる（運用手順 6 節）
+   - `github_oidc_subject_prefix` は、`gh api repos/{owner}/{repo}/actions/oidc/customization/sub` の `sub_claim_prefix` で確かめる（運用手順 5 節）
 3. **最初の apply（手元から）**。Cloud Run Job はイメージがないと作れず、イメージは Artifact Registry がないと送れないので、3 回に分けます（運用手順 1 節）
    1. API と Artifact Registry だけを `-target` で apply する
    2. `scripts/build_push.sh` でイメージを作って送る
    3. 表示されたタグを `image_tag` に渡して、全体を apply する
-4. **GitHub の設定**（運用手順 6 節）
+4. **GitHub の設定**（運用手順 5 節）
    - リポジトリの変数 `GCP_PROJECT_ID`・`GCP_WORKLOAD_IDENTITY_PROVIDER` と、シークレット `ALERT_EMAIL`
    - 環境 `production`（承認者を付け、main だけにする）
    - Pages の公開元を GitHub Actions にする

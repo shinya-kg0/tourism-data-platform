@@ -130,20 +130,7 @@ gcloud run jobs executions list --job=dbt --region=asia-northeast1 --limit=5
 | ingestion_log が `failed`、Workflows「ingest」が FAILED | Cloud Run Job「ingest」のログ | 一時的なエラーなら、同じファイルを landing に上げ直す |
 | Workflows「transform」が FAILED | Cloud Run Job「dbt」のログ、`ops.dbt_runs` | モデルかデータを直し、`force` を付けて transform を実行する |
 
-## 5. まだデプロイしていない取り込みで dbt を試す
-
-ingest の変更（表の追加など）をデプロイする前に dbt のモデルを作るときは、手元で解析した結果を
-開発用のデータセットに読み込み、`DBT_RAW_DATASET` で dbt の読み先を差し替える。本番の `raw` には書かない。
-
-```bash
-cd dbt
-DBT_RAW_DATASET=dbt_${DBT_USER}_raw uv run dbt build
-```
-
-- 開発用のデータセットのテーブルには有効期限を付けておく（本番の raw と同じスキーマ：`terraform/modules/bigquery/schemas/`）。
-
-
-## 6. GitHub Actions（PR の CI とデプロイの設定）
+## 5. GitHub Actions（PR の CI とデプロイの設定）
 
 `.github/workflows/ci.yml`（仕様書 12 章）。PR を開く・更新すると次が動く。
 
