@@ -6,8 +6,7 @@
     ingest consumption/quarterly/2026_Q3_preliminary1.xlsx --generation 1730000000000000
 
 環境変数:
-    GCP_PROJECT_ID          必須
-    LANDING_BUCKET など     省略時は {project}-landing / -archive / -rejected
+    GCP_PROJECT_ID          必須。バケットは {project}-landing / -archive / -rejected
     WORKFLOW_EXECUTION_ID   Workflows から渡される実行 ID（任意）
 
 終了コード（仕様書 5.2、D-04）:
@@ -108,7 +107,7 @@ def main(argv: list[str] | None = None) -> None:
     args = ap.parse_args(argv)
 
     project = os.environ["GCP_PROJECT_ID"]
-    buckets = {k: os.environ.get(f"{k.upper()}_BUCKET", f"{project}-{k}") for k in ["landing", "archive", "rejected"]}
+    buckets = {k: f"{project}-{k}" for k in ["landing", "archive", "rejected"]}
     code = run(
         args.object_name,
         args.generation,

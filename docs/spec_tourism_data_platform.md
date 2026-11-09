@@ -142,11 +142,11 @@ flowchart LR
 
 | 調査 | 集計期間 | 公表区分 | 取り込む表 | 入手先 |
 |---|---|---|---|---|
-| 宿泊旅行統計調査 | 暦年（1ファイルに年計と1〜12月を含む） | 年確定値のみ | 全21表（第1〜10表、参考第1〜11表） | e-Statのファイル |
+| 宿泊旅行統計調査 | 暦年（1ファイルに年計と1〜12月を含む） | 年確定値のみ | martsで使う5表（第1表、第2表、第4表、第8表、参考第1表） | e-Statのファイル |
 | 訪日外国人消費動向調査 | 暦年・四半期 | 1次速報・2次速報・確報 | 表2-1、表3-1、表3-4、表4-1、表6-1 | e-Stat・観光庁サイトのExcel |
 
-- 宿泊旅行統計は、変換処理がすでにあるため全表を取り込む。使うかどうかはdbt側で決める。
-- 消費動向調査は、変換処理を新しく作るため、martsで使う5表に絞る。表を増やしても、rawのテーブル定義は変わらない（D-07）。
+- どちらの調査も、martsで使う表だけを取り込む（見出し定義がある表だけを読む）。表を増やすときは、見出し定義を足せばよく、rawのテーブル定義は変わらない（D-07）。
+- 宿泊旅行統計は、最初は全21表を取り込んでいた。2026-11 に、使っていない表の見出し定義を消した。それより前に取り込んだ年のrawには、ほかの表の行も残っている。
 
 ### 3.2 既知の形式の違い
 
@@ -382,7 +382,6 @@ COMMIT TRANSACTION;
 | `stg_overnight__stays` | 第2表 | 延べ宿泊者数（全体・外国人） |
 | `stg_overnight__stays_by_facility_type` | 第4表 | 施設タイプ別の延べ宿泊者数 |
 | `stg_overnight__occupancy` | 第8表 | 客室稼働率 |
-| `stg_overnight__stays_by_residence` | 第9表 | 県内・県外別の延べ宿泊者数 |
 | `stg_overnight__foreign_stays_by_nationality` | 参考第1表 | 国籍別の外国人延べ宿泊者数 |
 | `stg_consumption__spend_by_category` | 表2-1 | 費目別の購入率と購入者単価 |
 | `stg_consumption__spend_per_trip` | 表3-1 | 1人1回当たり旅行消費単価 |
@@ -438,11 +437,9 @@ COMMIT TRANSACTION;
 | 標準テスト | staging・intermediate・marts | 主キー（列の組み合わせは `dbt_utils.unique_combination_of_columns`）と `not_null`。`target`・`release_status`・`area_type` などの区分の列に `accepted_values` |
 | リレーション | staging・marts の国籍・都道府県 | 国籍コードと都道府県コードが、すべてシードにあること |
 | 独自テスト | `stg_overnight__stays` | 年計と1〜12月の合計の差が、丸めの範囲（1セル±5 × 13セル＝±65）以内 |
-| 独自テスト | `stg_overnight__stays` | 47都道府県の合計＝全国、所属する都道府県の合計＝運輸局等（どちらも丸めの範囲以内。`seed_prefecture` の対応の確認も兼ねる） |
-| 独自テスト | overnight全般 | 年・月ごとに地域の数が58（全国1・都道府県47・運輸局等10）であること。rawの全表と `stg_overnight__stays` の両方で確かめる |
+| 独自テスト | `stg_overnight__stays` | 年・月ごとに地域の数が58（全国1・都道府県47・運輸局等10）であること |
 | 独自テスト | raw全般 | `value` が空なら、必ず `flag` が入っていること |
 | 独自テスト | 消費動向 | 表2-1 の日本滞在中の費目別「購入率×購入者単価」の合計が、表3-1 の消費単価と1％以内で一致すること（2018年以降。行・列の読み違いを見つける） |
-| 独自テスト | `mart_kpi_yearly` | 延べ宿泊者数（全体・日本人・外国人）と消費単価の前年比が±80％を超えたら警告（コロナの影響期間とその反動の2020〜2023年は除く。`severity: warn`） |
 
 > **D-11：今回手作業でした検証を、dbt testsにする**
 > 宿泊旅行統計の整備では、年計＝月合計、58地域、欠けている値に必ず記号があること、を手作業で確かめた。テストにしておけば、毎回自動で確かめられる。`dbt build` はテストに失敗するとその先のモデルを更新しないので、おかしなデータがmarts（とその先のBIツール）に出ない。
@@ -486,15 +483,15 @@ Cloud Scheduler（毎日 04:00 JST）
 | 3. 地域分析 | `mart_prefecture_yearly`、`mart_prefecture_nationality_yearly` | 都道府県の色分け地図、都道府県×国籍のヒートマップ、推計消費額 | スコープ外（martは作成済み） |
 | 4. 季節性 | `mart_seasonality_monthly` | 月×国籍のヒートマップ、年ごとの月別推移 | スコープ外（martは作成済み） |
 | 5. 宿泊の受け入れ | `mart_occupancy_yearly` | 施設タイプ別の稼働率、都道府県別の稼働率の地図 | スコープ外（martは作成済み） |
-| 6. データについて | — | 出典、欠けている期間、調査の変更、推計の方法 | スコープ外（載せる内容は `docs/looker_studio.md` の参考の節） |
+| 6. データについて | — | 出典、欠けている期間、調査の変更、推計の方法 | スコープ外（載せる内容は、dbt docs の各モデルの説明にある） |
 
 - 想定していた全ページ共通の絞り込み：年、国籍、都道府県（どのmartにも `year` があり、国籍・都道府県のmartにはコードと名前の列がある）
 - ページ1は、フェーズ2の時点の `mart_kpi_yearly`（延べ宿泊者数・外国人比率）で作った。フェーズ4で足した列（客室稼働率・消費単価・平均泊数）のスコアカードは作っていない。
-- ページ2以降の作り方の案は、`docs/looker_studio.md` に「参考（スコープ外・未検証）」として残す。
+- ページ2以降は、このページ構成と、dbt docs の各 mart の説明をもとに作る。
 
 ### 8.2 データへの接続と公開（ページ1）
 
-- データの読み取りには、**martsだけを読める専用のサービスアカウント（`sa-looker`）を使う**。
+- データの読み取りは、原則として**martsだけを読めるサービスアカウント**で行う（D-15）。ページ1は、オーナーの認証情報で接続している（D-15の現状）。
 - 公開範囲：リンクを知っている人なら誰でも見られる（閲覧のみ）。
 - キャッシュの更新間隔：12時間（データの更新は1日1回以下のため）。
 - カスタムクエリは使わない（martsのテーブルを直接つなぐ）。
@@ -507,7 +504,7 @@ Cloud Scheduler（毎日 04:00 JST）
 > **D-15：Looker Studioはサービスアカウントでデータを読む**
 > 公開したダッシュボードを「オーナーの権限」で動かすと、オーナー個人の権限でBigQueryが読まれ、raw層まで読めてしまう。martsを読む権限だけを持つサービスアカウントを使えば、ダッシュボードから触れる範囲を最小にできる。クエリの費用はプロジェクトに付き、予算アラートで見張れる。
 >
-> **現状（2026-11-04）**：個人の Google アカウントでは、データの認証情報に「サービス アカウント」を選べなかったため、オーナーの認証情報で接続している。閲覧者が読めるのはデータソースが指す marts のテーブルだけで、データソースを編集できるのはオーナーだけにしている。`sa-looker` と権限は残しておき、サービスアカウントが使える環境に移したら切り替える（手順は `docs/looker_studio.md`）。
+> **現状（2026-11-04）**：個人の Google アカウントでは、データの認証情報に「サービス アカウント」を選べなかったため、オーナーの認証情報で接続している。閲覧者が読めるのはデータソースが指す marts のテーブルだけで、データソースを編集できるのはオーナーだけにしている。使っていなかった `sa-looker` は、構成を簡単にするため2026-11に消した。サービスアカウントが使える環境に移すときは、`marts` のデータ閲覧者とジョブユーザーだけを持つサービスアカウントを作り、切り替える（手順は `docs/looker_studio.md`）。
 >
 > 可視化をスコープ外にした（D-22）ので、当面はこの最小限の運用のままにする。「BIツールが読むのはmartsだけ」「読む権限はmartsに絞ったサービスアカウントに持たせる」という原則は、Looker Studio以外のBIツールをつなぐときにも同じように守る。
 
@@ -567,7 +564,6 @@ Cloud Scheduler（毎日 04:00 JST）
 | `sa-workflows` | Workflows | ジョブ単位の実行権限（ingest は引数の上書きあり、dbt はなし）、ジョブの終了を待つためのカスタムロール（`run.operations.get`・`run.executions.get`）、`ops` のデータ編集者、ジョブユーザー、ログの書き込み |
 | `sa-eventarc` | Eventarcのトリガー | Workflowsの起動者、イベントの受信者 |
 | `sa-scheduler` | Cloud Scheduler | Workflowsの起動者 |
-| `sa-looker` | Looker Studio（BIツール） | `marts` のデータ閲覧者、ジョブユーザー（今は未使用。D-15） |
 | `sa-github-builder` | GitHub Actions（mainへのマージの `build-push`） | `tourism` リポジトリ（Artifact Registry）への書き込みだけ（mainブランチだけに限定） |
 | `sa-github-deployer` | GitHub Actions（mainへのマージの `terraform-apply`） | Terraformが管理するサービスの管理者ロール（GitHubの本番環境 `production` のジョブだけに限定。環境はmainだけ・承認が必要） |
 | `sa-github-docs` | GitHub Actions（mainへのマージの `dbt-docs`） | `raw`・`ops`・`staging`・`intermediate`・`marts` のデータ閲覧者、ジョブユーザー（書き込みはできない。mainブランチだけに限定）。dbt docs のカタログ（列の型・行数）を作るとき、dbt-bigquery がデータセットごとの `__TABLES__` を読み、これにはデータの閲覧者が要るため |
@@ -586,7 +582,7 @@ Cloud Scheduler（毎日 04:00 JST）
 > mainへのマージでも、イメージを送る（builder）・本番を変える（deployer）・dbt docsを作る（docs）を分ける。`sa-github-deployer` はIAMを管理するため `projectIamAdmin` を持ち、自分に権限を足すこともできてしまう。そこで、使えるのを「mainだけをデプロイできる環境 `production` の、承認を経たジョブ」に絞り、イメージの送信やdocsの作成のような、承認の要らない処理には使わせない。
 
 > **D-19：取り込み処理ではe-Stat APIを使わない**
-> 取り込みの対象はアップロードされたExcelだけで、APIキーは必要ない。そのためSecret Managerも使わない。APIは、手元のノートブックで探したり検証したりするときにだけ使う。
+> 取り込みの対象はアップロードされたExcelだけで、APIキーは必要ない。そのためSecret Managerも使わない。APIは、基盤を作る前のデータの調査でだけ使った。
 
 ---
 
@@ -595,7 +591,7 @@ Cloud Scheduler（毎日 04:00 JST）
 | きっかけ | ジョブ | 内容 |
 |---|---|---|
 | PR | `lint-test` | Pythonの静的検査（ruff）、ingestの単体テスト（pytest。小さなExcelの見本で、変換と構造検査を確かめる） |
-| PR | `terraform-plan` | `fmt` → `validate` → `plan`。plan の結果をPRにコメントする |
+| PR | `terraform-plan` | `fmt` → `validate` → `plan`。plan の結果はジョブのログで見る |
 | PR | `dbt-ci` | `ci_pr_{番号}` データセットに対して `dbt build` を実行する（rawは本番のものを読むだけ） |
 | PRを閉じたとき | `dbt-ci-cleanup` | `ci_pr_{番号}` データセットを消す |
 | mainへのマージ | `build-push` | ingest用・dbt用のコンテナイメージを作り、コミットのSHAをタグにしてArtifact Registryへ送る（マージのたびに作り、「タグ＝デプロイしたコミット」を保つ） |
@@ -605,7 +601,7 @@ Cloud Scheduler（毎日 04:00 JST）
 
 - 認証：GCPを使うジョブは、Workload Identity連携でジョブごとのサービスアカウントになる（D-18。11章）。プロバイダは、このリポジトリから来たトークンだけを受け付ける。PRのジョブは読み取りが中心の `sa-github-plan`・`sa-github-dbt-ci`、mainへのマージのジョブは `sa-github-builder`・`sa-github-plan`・`sa-github-deployer`・`sa-github-docs` を使う。
 - フォークからのPR：GitHubの仕様で認証のトークンを受け取れないため、GCPを使うジョブは動かさない（`lint-test` だけが動く）。
-- `terraform-plan` は tfstate をロックしない（`-lock=false`）。`image_tag` には、本番のCloud Run Jobが今使っているタグを渡し、イメージの差分が出ないようにする。plan の結果は、PRのコメントを1つだけ作り、毎回書き換える。
+- `terraform-plan` は tfstate をロックしない（`-lock=false`）。`image_tag` には、本番のCloud Run Jobが今使っているタグを渡し、イメージの差分が出ないようにする。
 - GitHub側で手作業でする設定（リポジトリの変数・シークレット）は `docs/operations.md` に書く。
 
 > **D-20：dbtのCIは、本番のrawを読み、PR専用のデータセットに書き出す**
@@ -651,7 +647,7 @@ Cloud Scheduler（毎日 04:00 JST）
 │   │   ├── validation.py       # 構造の検査
 │   │   └── bq_writer.py        # 一時テーブルへの読み込みとトランザクションでの入れ替え
 │   ├── header_defs/            # 見出しの定義（D-06）
-│   ├── tests/                  # 単体テストと小さなExcelの見本
+│   ├── tests/                  # 単体テスト（小さなExcelの見本はテストの中で作る）
 │   └── Dockerfile
 ├── dbt/
 │   ├── models/{staging,intermediate,marts}/
@@ -664,14 +660,13 @@ Cloud Scheduler（毎日 04:00 JST）
 ├── terraform/
 │   ├── modules/                # storage / bigquery / pipeline / iam / monitoring
 │   └── envs/prod/
-├── notebooks/                  # 今あるノートブック（探索・検証用）
-├── docs/                       # 仕様書、運用手順、作業レポート、looker_studio.md
+├── docs/                       # 仕様書、運用手順、looker_studio.md
 ├── scripts/                    # 見出し定義の作成、手元からのイメージの作成（build_push.sh）
 └── .github/workflows/         # ci.yml（PR）/ deploy.yml（mainへのマージ）
 ```
 
 - `.env`、`data/`、`*.tfstate` はGitで管理しない。
-- フェーズ0の前に作ったスクリプトとレポートは、それぞれ `scripts/` と `docs/reports/` に移した。
+- フェーズ0の前のデータ調査のスクリプトとレポートは、リポジトリに含めない（基盤の再現には要らないため）。
 
 ---
 
@@ -707,7 +702,7 @@ Cloud Scheduler（毎日 04:00 JST）
 | 監視のアラートの発火 | ingest の rejected / failed と Workflows の失敗のアラートは、わざと失敗を起こして確かめていない | 次に rejected になるファイルが出たときに、メールが届くことを確かめる。早めに確かめるなら、パスのルールに合わないファイルを landing に上げる |
 | GitHub Actionsのアクションの固定 | アクションはメジャーバージョンのタグ（`@v4` など）で指定していて、タグが書き換えられると別のコードが動く | `sa-github-deployer` を使うジョブから順に、コミットのSHAでの固定を検討する |
 | `sa-github-deployer` の権限の強さ | IAMを管理するため `projectIamAdmin` を持ち、自分に権限を足すこともできる | 使えるのを環境 `production`（mainだけ・承認が必要）のジョブに絞っている（D-18）。承認の前に plan のまとめを読む |
-| Looker Studioの接続の認証 | 個人のGoogleアカウントではサービスアカウントを選べず、オーナーの認証で接続している（D-15の現状） | データソースを編集できるのはオーナーだけにしている。サービスアカウントが使える環境に移したら `sa-looker` に切り替える |
+| Looker Studioの接続の認証 | 個人のGoogleアカウントではサービスアカウントを選べず、オーナーの認証で接続している（D-15の現状） | データソースを編集できるのはオーナーだけにしている。サービスアカウントが使える環境に移したら、martsだけを読めるサービスアカウントを作って切り替える（D-15） |
 | 公開したページ1の費用 | 可視化はスコープ外（D-22）。動作確認のページ1だけが公開されていて、閲覧が増えるとクエリの費用が増える | martsを小さく保ち、キャッシュを効かせ、予算アラートで見張る。BIツールでページを増やすときも同じ |
 
 ---

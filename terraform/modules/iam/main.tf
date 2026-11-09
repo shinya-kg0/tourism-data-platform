@@ -9,7 +9,6 @@ locals {
     "sa-workflows"       = "Workflows（ingest / transform）"
     "sa-eventarc"        = "Eventarc のトリガー"
     "sa-scheduler"       = "Cloud Scheduler"
-    "sa-looker"          = "Looker Studio のデータ読み取り（marts のみ）"
     "sa-github-plan"     = "GitHub Actions：PR の terraform plan（読み取りのみ）"
     "sa-github-dbt-ci"   = "GitHub Actions：PR の dbt build（ci_pr_{番号} に書き出す）"
     "sa-github-builder"  = "GitHub Actions：main へのマージでコンテナイメージを送る"
@@ -31,7 +30,6 @@ locals {
     { sa = "sa-dbt", dataset = "intermediate", role = "roles/bigquery.dataEditor" },
     { sa = "sa-dbt", dataset = "marts", role = "roles/bigquery.dataEditor" },
     { sa = "sa-workflows", dataset = "ops", role = "roles/bigquery.dataEditor" },
-    { sa = "sa-looker", dataset = "marts", role = "roles/bigquery.dataViewer" },
     { sa = "sa-github-dbt-ci", dataset = "raw", role = "roles/bigquery.dataViewer" },
   ]
 
@@ -42,7 +40,7 @@ locals {
   ]
 
   # クエリを実行するサービスアカウント
-  job_users = ["sa-ingest", "sa-dbt", "sa-workflows", "sa-looker", "sa-github-docs"]
+  job_users = ["sa-ingest", "sa-dbt", "sa-workflows", "sa-github-docs"]
 
   # 処理の起動に関わる、プロジェクト単位の権限
   project_roles = [

@@ -126,7 +126,7 @@ BI ツールが読むのは `marts` データセットだけです（D-15）。�
 | `mart_occupancy_yearly` | 5. 宿泊の受け入れ | 都道府県×施設タイプ×年 |
 
 - 各列の意味・単位・注意点（コロナ期間の欠損、サンプルの少ない県の `is_low_sample` など）は [dbt docs](https://shinya-kg0.github.io/tourism-data-platform/) の各 mart のページにあります。
-- 読み取りには `marts` だけを読めるサービスアカウント `sa-looker`（`marts` のデータ閲覧者とジョブユーザー）を使います。個人の認証でつなぐと raw まで読めてしまうためです。
+- 読み取りには、`marts` だけを読めるサービスアカウント（`marts` のデータ閲覧者とジョブユーザー）を BI ツール用に作って使うのが原則です（D-15）。個人の認証でつなぐと raw まで読めてしまうためです。今の Looker Studio のページ 1 はオーナーの認証でつないでいるので、このアカウントは作っていません。
 - カスタムクエリは使わず、テーブルをそのままつなぎます。データの更新は 1 日 1 回以下なので、キャッシュは長め（例：12 時間）で十分です。
 - どの mart にも `year` があり、国籍・都道府県の mart にはコードと名前の列があるので、年・国籍・都道府県の絞り込みをページ全体にかけられます。
 - Looker Studio での具体的な手順は [docs/looker_studio.md](docs/looker_studio.md) にあります。
@@ -135,12 +135,12 @@ BI ツールが読むのは `marts` データセットだけです（D-15）。�
 
 | きっかけ | 動くもの |
 |---|---|
-| PR | `lint-test`（ruff・pytest）、`terraform-plan`（結果を PR にコメント）、`dbt-ci`（本番の raw を読み、`ci_pr_{番号}` に `dbt build`） |
+| PR | `lint-test`（ruff・pytest）、`terraform-plan`（結果はジョブのログ）、`dbt-ci`（本番の raw を読み、`ci_pr_{番号}` に `dbt build`） |
 | PR を閉じたとき | `ci_pr_{番号}` を消す |
 | main へのマージ | イメージの作成 → plan → **承認** → `terraform apply`。あわせて dbt docs を GitHub Pages に公開 |
 
 - main はブランチの保護をかけていて、PR の 3 つのチェックが通らないとマージできません。
-- 詳しくは仕様書 12 章と、運用手順の 1 節・6 節を見てください。
+- 詳しくは仕様書 12 章と、運用手順の 1 節・5 節を見てください。
 
 ## ディレクトリ構成
 
@@ -150,9 +150,8 @@ BI ツールが読むのは `marts` データセットだけです（D-15）。�
 | `dbt/` | dbt プロジェクト（モデル、シード、テスト、マクロ、Dockerfile） |
 | `workflows/` | Cloud Workflows の定義（ingest / transform） |
 | `terraform/` | GCP リソース（`modules/` と `envs/prod/`） |
-| `docs/` | 仕様書、運用手順、Looker Studio の構築手順（ページ 1 のみ）、作業レポート（`reports/`） |
+| `docs/` | 仕様書、運用手順、Looker Studio の構築手順（ページ 1 のみ） |
 | `scripts/` | 見出し定義の作成（`generate_header_defs.py`）、手元からのイメージの作成（`build_push.sh`） |
-| `notebooks/` | 探索・検証用のノートブックの置き場所 |
 | `.github/workflows/` | CI（`ci.yml`）とデプロイ（`deploy.yml`） |
 
 ## 開発環境の準備
@@ -184,12 +183,12 @@ cd dbt && uv sync && uv run dbt deps && uv run dbt build
    cp backend.hcl.example backend.hcl && cp terraform.tfvars.example terraform.tfvars   # 値を埋める
    terraform init -backend-config=backend.hcl
    ```
-   - `github_oidc_subject_prefix` は、`gh api repos/{owner}/{repo}/actions/oidc/customization/sub` の `sub_claim_prefix` で確かめる（運用手順 6 節）
+   - `github_oidc_subject_prefix` は、`gh api repos/{owner}/{repo}/actions/oidc/customization/sub` の `sub_claim_prefix` で確かめる（運用手順 5 節）
 3. **最初の apply（手元から）**。Cloud Run Job はイメージがないと作れず、イメージは Artifact Registry がないと送れないので、3 回に分けます（運用手順 1 節）
    1. API と Artifact Registry だけを `-target` で apply する
    2. `scripts/build_push.sh` でイメージを作って送る
    3. 表示されたタグを `image_tag` に渡して、全体を apply する
-4. **GitHub の設定**（運用手順 6 節）
+4. **GitHub の設定**（運用手順 5 節）
    - リポジトリの変数 `GCP_PROJECT_ID`・`GCP_WORKLOAD_IDENTITY_PROVIDER` と、シークレット `ALERT_EMAIL`
    - 環境 `production`（承認者を付け、main だけにする）
    - Pages の公開元を GitHub Actions にする
