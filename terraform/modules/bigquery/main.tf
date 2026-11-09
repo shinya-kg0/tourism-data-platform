@@ -14,7 +14,7 @@ locals {
   tables = {
     overnight_cells = {
       dataset         = "raw"
-      description     = "宿泊旅行統計調査（年確定値）の全表を縦持ちにしたもの"
+      description     = "宿泊旅行統計調査（年確定値）の対象表を縦持ちにしたもの"
       partition_field = "year"
       clustering      = ["table_id", "area_name"]
     }
