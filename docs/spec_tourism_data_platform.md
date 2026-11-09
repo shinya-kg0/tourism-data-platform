@@ -382,7 +382,6 @@ COMMIT TRANSACTION;
 | `stg_overnight__stays` | 第2表 | 延べ宿泊者数（全体・外国人） |
 | `stg_overnight__stays_by_facility_type` | 第4表 | 施設タイプ別の延べ宿泊者数 |
 | `stg_overnight__occupancy` | 第8表 | 客室稼働率 |
-| `stg_overnight__stays_by_residence` | 第9表 | 県内・県外別の延べ宿泊者数 |
 | `stg_overnight__foreign_stays_by_nationality` | 参考第1表 | 国籍別の外国人延べ宿泊者数 |
 | `stg_consumption__spend_by_category` | 表2-1 | 費目別の購入率と購入者単価 |
 | `stg_consumption__spend_per_trip` | 表3-1 | 1人1回当たり旅行消費単価 |
