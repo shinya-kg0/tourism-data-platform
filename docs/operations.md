@@ -150,7 +150,7 @@ DBT_RAW_DATASET=dbt_${DBT_USER}_raw uv run dbt build
 | ジョブ | 認証（D-18） | 内容 |
 |---|---|---|
 | `lint-test` | なし | ingest の `ruff check` と `pytest` |
-| `terraform-plan` | `sa-github-plan` | `fmt -check` → `validate` → `plan -lock=false`。結果を PR にコメントする（同じコメントを書き換える） |
+| `terraform-plan` | `sa-github-plan` | `fmt -check` → `validate` → `plan -lock=false`。結果はジョブのログで見る |
 | `dbt-ci` | `sa-github-dbt-ci` | 本番の raw を読み、`ci_pr_{番号}` に `dbt build --target ci` |
 | `dbt-ci-cleanup` | `sa-github-dbt-ci` | PR を閉じたら `ci_pr_{番号}` を消す |
 

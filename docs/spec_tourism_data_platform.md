@@ -592,7 +592,7 @@ Cloud Scheduler（毎日 04:00 JST）
 | きっかけ | ジョブ | 内容 |
 |---|---|---|
 | PR | `lint-test` | Pythonの静的検査（ruff）、ingestの単体テスト（pytest。小さなExcelの見本で、変換と構造検査を確かめる） |
-| PR | `terraform-plan` | `fmt` → `validate` → `plan`。plan の結果をPRにコメントする |
+| PR | `terraform-plan` | `fmt` → `validate` → `plan`。plan の結果はジョブのログで見る |
 | PR | `dbt-ci` | `ci_pr_{番号}` データセットに対して `dbt build` を実行する（rawは本番のものを読むだけ） |
 | PRを閉じたとき | `dbt-ci-cleanup` | `ci_pr_{番号}` データセットを消す |
 | mainへのマージ | `build-push` | ingest用・dbt用のコンテナイメージを作り、コミットのSHAをタグにしてArtifact Registryへ送る（マージのたびに作り、「タグ＝デプロイしたコミット」を保つ） |
@@ -602,7 +602,7 @@ Cloud Scheduler（毎日 04:00 JST）
 
 - 認証：GCPを使うジョブは、Workload Identity連携でジョブごとのサービスアカウントになる（D-18。11章）。プロバイダは、このリポジトリから来たトークンだけを受け付ける。PRのジョブは読み取りが中心の `sa-github-plan`・`sa-github-dbt-ci`、mainへのマージのジョブは `sa-github-builder`・`sa-github-plan`・`sa-github-deployer`・`sa-github-docs` を使う。
 - フォークからのPR：GitHubの仕様で認証のトークンを受け取れないため、GCPを使うジョブは動かさない（`lint-test` だけが動く）。
-- `terraform-plan` は tfstate をロックしない（`-lock=false`）。`image_tag` には、本番のCloud Run Jobが今使っているタグを渡し、イメージの差分が出ないようにする。plan の結果は、PRのコメントを1つだけ作り、毎回書き換える。
+- `terraform-plan` は tfstate をロックしない（`-lock=false`）。`image_tag` には、本番のCloud Run Jobが今使っているタグを渡し、イメージの差分が出ないようにする。
 - GitHub側で手作業でする設定（リポジトリの変数・シークレット）は `docs/operations.md` に書く。
 
 > **D-20：dbtのCIは、本番のrawを読み、PR専用のデータセットに書き出す**

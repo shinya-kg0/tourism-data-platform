@@ -43,7 +43,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-      pull-requests: write
     defaults:
       run:
         working-directory: terraform/envs/prod
@@ -89,36 +88,7 @@ jobs:
 
       # plan は tfstate を書き換えないので、ロックしない（sa-github-plan には書き込みの権限がない）
       - name: plan
-        run: |
-          set -o pipefail
-          terraform plan -lock=false -input=false -no-color 2>&1 | tee plan.txt
-
-      - name: PR にコメント
-        if: always() && hashFiles('terraform/envs/prod/plan.txt') != ''
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require("fs");
-            const marker = "<!-- terraform-plan -->";
-            const lines = fs.readFileSync("terraform/envs/prod/plan.txt", "utf8").split("\n")
-              .filter((l) => !/: (Refreshing state|Reading|Read complete)/.test(l));
-            let plan = lines.join("\n").trim();
-            const limit = 60000;
-            if (plan.length > limit) plan = plan.slice(0, limit) + "\n…（長いため省略。全文はジョブのログを参照）";
-            const summary = (plan.match(/^(Plan: .*|No changes\..*|Error: .*)$/m) || ["（結果の要約が見つかりません）"])[0];
-            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const body = `${marker}\n### terraform plan（envs/prod）\n\n**${summary}**\n\n` +
-              `<details><summary>plan の全文</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>\n\n` +
-              `コミット ${context.sha.slice(0, 7)}・[ジョブのログ](${run})`;
-            const { owner, repo } = context.repo;
-            const issue_number = context.payload.pull_request.number;
-            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
-            const mine = comments.find((c) => c.user.type === "Bot" && c.body.startsWith(marker));
-            if (mine) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number, body });
-            }
+        run: terraform plan -lock=false -input=false -no-color
 
   # 本番の raw を読み、ci_pr_{番号} に書き出す（D-20）
   dbt-ci:

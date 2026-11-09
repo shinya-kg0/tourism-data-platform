@@ -135,7 +135,7 @@ BI ツールが読むのは `marts` データセットだけです（D-15）。�
 
 | きっかけ | 動くもの |
 |---|---|
-| PR | `lint-test`（ruff・pytest）、`terraform-plan`（結果を PR にコメント）、`dbt-ci`（本番の raw を読み、`ci_pr_{番号}` に `dbt build`） |
+| PR | `lint-test`（ruff・pytest）、`terraform-plan`（結果はジョブのログ）、`dbt-ci`（本番の raw を読み、`ci_pr_{番号}` に `dbt build`） |
 | PR を閉じたとき | `ci_pr_{番号}` を消す |
 | main へのマージ | イメージの作成 → plan → **承認** → `terraform apply`。あわせて dbt docs を GitHub Pages に公開 |
 
